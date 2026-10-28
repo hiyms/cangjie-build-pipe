@@ -35,11 +35,23 @@ _CJPM_EDITS: tuple[tuple[str, str], ...] = (
 )
 
 
+def _tool_build_type(cfg: BuildConfig) -> str:
+    """Build type to use for the tools, which only accept debug or release.
+
+    RelWithDebInfo is not among build.py's choices in cangjie_tools, so it has to
+    be folded onto one of them. release keeps optimisations on, which is what
+    RelWithDebInfo was asking for; the debug info is not something a tool needs.
+    """
+    return "debug" if cfg.build_type == "debug" else "release"
+
+
 def _build_args_for(name: str, cfg: BuildConfig) -> list[CommandPart]:
     if cfg.target.spec.cross_compile:
         return ["build", "-t", cfg.cross_build_type, "--target", "windows-x86_64"]
-    args: list[CommandPart] = ["build", "-t", cfg.build_type]
+    args: list[CommandPart] = ["build", "-t", _tool_build_type(cfg)]
     if name == "cjpm":
+        # The runtime was built with cfg.build_type, so its lib directory carries
+        # that name even though the tool itself is built as release/debug.
         rpath = f"$ORIGIN/../../runtime/lib/{cfg.target.runtime_lib_subdir(cfg.build_type)}"
         args += ["--set-rpath", rpath]
     return args

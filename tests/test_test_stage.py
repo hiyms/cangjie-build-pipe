@@ -544,3 +544,19 @@ def test_system_deps_include_the_python_headers_lldb_needs() -> None:
     assert "python3-dev" in system_deps.APT_PACKAGES
     # swig must stay: the same CMake module looks for it.
     assert "swig" in system_deps.APT_PACKAGES
+
+
+def test_tools_fold_relwithdebinfo_onto_an_accepted_build_type() -> None:
+    """cangjie_tools' build.py accepts only debug and release."""
+    from cangjie_build.stages import tools
+
+    class _Cfg:
+        def __init__(self, build_type: str) -> None:
+            self.build_type = build_type
+
+    for requested, expected in (
+        ("relwithdebinfo", "release"),
+        ("release", "release"),
+        ("debug", "debug"),
+    ):
+        assert tools._tool_build_type(_Cfg(requested)) == expected  # type: ignore[arg-type]
