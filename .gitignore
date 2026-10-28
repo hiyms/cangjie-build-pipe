@@ -33,3 +33,12 @@ software/
 # Throwaway dumps from local az cli probing
 skus.json
 all-skus.json
+# Local probe scratch data
+.scratch/
+
+# Local CI-reproduction workspaces
+.ci/
+.verify/
+.review/
+.final/
+.plan/

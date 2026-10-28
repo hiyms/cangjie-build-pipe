@@ -21,7 +21,7 @@ _log = get_logger("cangjie_build.stages")
 WINDOWS_TARGET = "windows-x86_64"
 
 
-def _join_pathsep(*parts: str) -> str:
+def join_pathsep(*parts: str) -> str:
     return os.pathsep.join(p for p in parts if p)
 
 
@@ -88,9 +88,9 @@ def base_env(cfg: BuildConfig) -> dict[str, str]:
         env["CANGJIE_STDX_PATH"] = str(stdx_path)
 
     if ld_paths:
-        env["LD_LIBRARY_PATH"] = _join_pathsep(*ld_paths, os.environ.get("LD_LIBRARY_PATH", ""))
+        env["LD_LIBRARY_PATH"] = join_pathsep(*ld_paths, os.environ.get("LD_LIBRARY_PATH", ""))
 
-    env["PATH"] = _join_pathsep(*extra_path_dirs, os.environ.get("PATH", ""))
+    env["PATH"] = join_pathsep(*extra_path_dirs, os.environ.get("PATH", ""))
     return env
 
 

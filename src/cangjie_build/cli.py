@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, cast
 
 import typer
 
@@ -314,6 +314,172 @@ def cmd_verify(ctx: typer.Context) -> None:
     from cangjie_build.stages import verify
 
     verify.run(_cfg(ctx))
+
+
+@app.command("plan-tests")
+def cmd_plan_tests(
+    ctx: typer.Context,
+    test_repo: Annotated[
+        str,
+        typer.Option("--test-repo", help="cangjie_test repository URL."),
+    ] = "https://github.com/CangjieLanguage/cangjie_test.git",
+    test_tag: Annotated[
+        str | None,
+        typer.Option("--test-tag", help="Branch/tag for the test checkout."),
+    ] = None,
+    cases: Annotated[
+        list[Path] | None,
+        typer.Option(
+            "--case",
+            help="A case file or directory (repeatable). The suite is inferred from the path.",
+        ),
+    ] = None,
+    suites: Annotated[
+        list[str] | None,
+        typer.Option("--suite", help="Whole suites to count: hlt, llt. Repeatable."),
+    ] = None,
+) -> None:
+    """Print the VM size a test selection needs, one key=value pair per line.
+
+    Runs before any VM exists, so the caller can size the machine from the actual
+    number of cases instead of guessing. Only the test repository is needed here,
+    not an SDK.
+    """
+    from cangjie_build.stages import test as test_stage
+
+    cfg = _cfg(ctx)
+    repo = test_stage.checkout_test_repo(
+        cfg, test_repo=test_repo, test_tag=test_tag or None, stage_name="plan.repo"
+    )
+    selected: list[Path] = [c if c.is_absolute() else repo / c for c in (cases or [])]
+    for suite in suites or []:
+        suite_name = suite.lower()
+        if suite_name not in {"hlt", "llt"}:
+            raise typer.BadParameter(f"--suite takes hlt or llt here; got {suite!r}")
+        selected.append(repo / "testsuites" / suite_name.upper())
+    if not selected:
+        raise typer.BadParameter("give at least one --case or --suite to count")
+    for path in selected:
+        if not path.exists():
+            raise typer.BadParameter(f"no such path in the checkout: {path}")
+
+    count = test_stage.count_cases(selected, repo)
+    typer.echo(f"cases={count}")
+    typer.echo(f"vm_size={test_stage.size_for_case_count(count)}")
+
+
+@app.command("test")
+def cmd_test(
+    ctx: typer.Context,
+    suites: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--suite",
+            help=(
+                "Suites for whole-suite runs: conformance, hlt, llt. Repeatable. "
+                "Explicit --case paths override this and may mix suites."
+            ),
+        ),
+    ] = None,
+    test_repo: Annotated[
+        str,
+        typer.Option("--test-repo", help="cangjie_test repository URL."),
+    ] = "https://github.com/CangjieLanguage/cangjie_test.git",
+    framework_repo: Annotated[
+        str,
+        typer.Option("--framework-repo", help="cangjie_test_framework repository URL."),
+    ] = "https://github.com/CangjieLanguage/cangjie_test_framework.git",
+    test_tag: Annotated[
+        str | None,
+        typer.Option("--test-tag", help="Branch/tag for both test repositories."),
+    ] = None,
+    tests: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--tests",
+            help="Conformance test path mask (repeatable); relative to the testsuite root.",
+        ),
+    ] = None,
+    sdk_archive: Annotated[
+        list[Path] | None,
+        typer.Option(
+            "--sdk-archive",
+            help="SDK/STDX archive to unpack into workspace/software before running (repeatable).",
+        ),
+    ] = None,
+    test_list: Annotated[
+        Path | None,
+        typer.Option("--test-list", help="Test list file for HLT/LLT (default: the suite's own)."),
+    ] = None,
+    cases: Annotated[
+        list[Path] | None,
+        typer.Option(
+            "--case",
+            help=(
+                "A case file or directory (repeatable). The suite is inferred from the "
+                "path, so one run can mix testsuites/HLT and testsuites/LLT cases."
+            ),
+        ),
+    ] = None,
+    changed_in: Annotated[
+        str | None,
+        typer.Option(
+            "--changed-in",
+            help="Run only the cases touched by one cangjie_test commit, e.g. HEAD or aSHA.",
+        ),
+    ] = None,
+    jobs: Annotated[int, typer.Option("-j", "--jobs", help="Parallel test jobs.")] = 8,
+    base_timeout: Annotated[
+        int,
+        typer.Option("--base-timeout", help="Per-case timeout in seconds."),
+    ] = 120,
+) -> None:
+    """Run cangjie_test suites against the packaged SDK in workspace/software."""
+    from cangjie_build.stages import test as test_stage
+    from cangjie_build.stages.test import Suite
+
+    valid = {"conformance", "hlt", "llt"}
+    # --suite is the plan for whole-suite runs. Explicit --case paths carry
+    # their own suite, so mixing HLT and LLT in one invocation needs no --suite.
+    wanted = [s.lower() for s in (suites or ["conformance"])]
+    unknown = sorted(set(wanted) - valid)
+    if unknown:
+        raise typer.BadParameter(f"unknown suite(s) {unknown}; valid: {sorted(valid)}")
+    cfg = _cfg(ctx)
+    if sdk_archive:
+        test_stage.stage_sdk_from_archives(cfg, list(sdk_archive))
+    selected = list(cases or [])
+    # Reject contradictory selections before any clone happens: the checkout is
+    # ~1 GB, so discovering the conflict afterwards wastes the whole download.
+    if changed_in and selected:
+        raise typer.BadParameter("--changed-in picks the cases itself; drop --case")
+    # Explicit selections name their own suite, so the default plan (which is
+    # conformance) no longer applies to them.
+    if (changed_in or selected) and suites and "conformance" in wanted and len(wanted) > 1:
+        raise typer.BadParameter(
+            "--case and --changed-in decide the suites from their paths; "
+            "do not also name conformance in --suite"
+        )
+    if test_list and "conformance" in wanted and not suites:
+        raise typer.BadParameter("--test-list selects HLT/LLT cases; use --tests for conformance")
+    if selected and test_list:
+        raise typer.BadParameter(
+            "--case pins individual cases and --test-list replaces the suite's list; "
+            "pass one of them, not both"
+        )
+    test_stage.run(
+        cfg,
+        suites=[cast("Suite", s) for s in wanted],
+        test_repo=test_repo,
+        framework_repo=framework_repo,
+        test_tag=test_tag or None,
+        tests=tests or [],
+        test_list=test_list,
+        cases=selected,
+        changed_in=changed_in or None,
+        jobs=jobs,
+        base_timeout=base_timeout,
+    )
 
 
 @app.command("run-all")

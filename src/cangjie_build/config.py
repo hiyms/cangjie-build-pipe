@@ -39,11 +39,13 @@ class RepoName(StrEnum):
     STDX = "stdx"
 
 
+_UPSTREAM_ORG = "https://github.com/CangjieLanguage"
+
 _REPO_DEFAULTS: dict[RepoName, tuple[str, str]] = {
-    RepoName.COMPILER: ("https://gitcode.com/Cangjie/cangjie_compiler.git", "cangjie_compiler"),
-    RepoName.RUNTIME: ("https://gitcode.com/Cangjie/cangjie_runtime.git", "cangjie_runtime"),
-    RepoName.TOOLS: ("https://gitcode.com/Cangjie/cangjie_tools.git", "cangjie_tools"),
-    RepoName.STDX: ("https://gitcode.com/Cangjie/cangjie_stdx.git", "cangjie_stdx"),
+    RepoName.COMPILER: (f"{_UPSTREAM_ORG}/cangjie_compiler.git", "cangjie_compiler"),
+    RepoName.RUNTIME: (f"{_UPSTREAM_ORG}/cangjie_runtime.git", "cangjie_runtime"),
+    RepoName.TOOLS: (f"{_UPSTREAM_ORG}/cangjie_tools.git", "cangjie_tools"),
+    RepoName.STDX: (f"{_UPSTREAM_ORG}/cangjie_stdx.git", "cangjie_stdx"),
 }
 
 

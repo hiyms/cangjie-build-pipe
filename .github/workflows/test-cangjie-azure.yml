@@ -1,0 +1,453 @@
+name: Run cangjie_test on Azure VM
+
+# Run the upstream cangjie_test suites against an already-built SDK, on a VM
+# sized for executing test cases rather than for compiling LLVM.
+#
+# The split exists because the two workloads want opposite machines: the build
+# peaks on 16 vCPU and 40+ GB of disk for LLVM/MinGW, while running cases is
+# dominated by many short cjc invocations plus process starts. Keeping them in
+# one job would mean keeping the expensive build VM alive for the test run.
+#
+# Required repo secrets: same as build-cangjie-azure.yml.
+#
+# Inputs let a caller pass either a GitHub artifact from an earlier build in
+# this repository (sdk_artifact) or a URL that serves a prebuilt SDK archive.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sdk_artifact:
+        description: "Artifact name holding the SDK/STDX archives (e.g. cangjie-linux-x64-1.2.3). Leave empty to use sdk_url."
+        required: false
+        default: ""
+      sdk_artifact_run_id:
+        description: "Run ID that produced sdk_artifact. Empty = the current run."
+        required: false
+        default: ""
+      sdk_url:
+        description: "Direct URL to a linux-x64 SDK archive (used when sdk_artifact is empty)."
+        required: false
+        default: ""
+      stdx_url:
+        description: "Direct URL to the matching STDX archive (optional with sdk_url)."
+        required: false
+        default: ""
+      test_tag:
+        description: "Branch/tag for cangjie_test and cangjie_test_framework (default = dev)."
+        required: false
+        default: "dev"
+      suites:
+        description: "Space-separated suites to run."
+        required: true
+        default: "conformance"
+      test_paths:
+        description: "Space-separated conformance path masks relative to the testsuite root. Empty = whole suite."
+        required: false
+        default: ""
+      test_list:
+        description: "Test list file for HLT/LLT. Empty = the suite's own list."
+        required: false
+        default: ""
+      test_cases:
+        description: "Space-separated HLT/LLT case files or directories. Overrides test_list."
+        required: false
+        default: ""
+      changed_in:
+        description: "Run only cases touched by one cangjie_test commit (e.g. HEAD). HLT/LLT only."
+        required: false
+        default: ""
+      jobs:
+        description: "Parallel test cases. Empty derives it from the VM size (2/4/8)."
+        required: false
+        default: ""
+      base_timeout:
+        description: "Per-case timeout in seconds."
+        required: true
+        default: "120"
+      vm_size:
+        description: "Azure VM SKU. Leave as auto to size from the case count (<=20 -> 2 vCPU, <=1000 -> 4 vCPU, else 8 vCPU)."
+        required: true
+        default: "auto"
+      vm_regions:
+        description: "Space-separated, ordered region preference list."
+        required: true
+        default: "eastus eastus2 centralus westus3"
+      vm_priority:
+        description: "Spot (cheap, evictable) or Regular."
+        required: true
+        default: "Spot"
+        type: choice
+        options:
+          - Spot
+          - Regular
+
+permissions:
+  id-token: write
+  contents: read
+  actions: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  RG_NAME: cangjie-test-${{ github.run_id }}-${{ github.run_attempt }}
+  RUNNER_LABEL: cangjie-test-${{ github.run_id }}-${{ github.run_attempt }}
+  RUNNER_VERSION: "2.334.0"
+
+jobs:
+  provision:
+    name: Provision test VM
+    runs-on: ubuntu-22.04
+    outputs:
+      runner_label: ${{ env.RUNNER_LABEL }}
+      rg_name: ${{ env.RG_NAME }}
+      region: ${{ steps.vm.outputs.region }}
+      priority: ${{ steps.vm.outputs.priority }}
+      vm_size: ${{ steps.size.outputs.size }}
+      case_count: ${{ steps.size.outputs.cases }}
+      jobs: ${{ steps.size.outputs.jobs }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Validate the inputs before paying for a VM: both SDK inputs are
+      # optional, and without this an operator who supplies neither only finds
+      # out after the machine has already booted and billed.
+      - name: Validate inputs
+        env:
+          SDK_ARTIFACT: ${{ inputs.sdk_artifact }}
+          SDK_URL: ${{ inputs.sdk_url }}
+          CHANGED_IN: ${{ inputs.changed_in }}
+          TEST_CASES: ${{ inputs.test_cases }}
+          SUITES: ${{ inputs.suites }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SDK_ARTIFACT" && -z "$SDK_URL" ]]; then
+            echo "::error::Set sdk_artifact (same repo, needs actions:read) or sdk_url."
+            exit 1
+          fi
+          # Probe reachability before a VM is billed. A bad name or URL would
+          # otherwise only surface inside the VM, after boot.
+          if [[ -n "$SDK_URL" ]]; then
+            if ! curl -fsSI --max-time 30 "$SDK_URL" >/dev/null; then
+              echo "::error::sdk_url is not reachable: $SDK_URL"
+              exit 1
+            fi
+          fi
+          if [[ -n "$CHANGED_IN" && -n "$TEST_CASES" ]]; then
+            echo "::error::changed_in picks the cases itself; do not also set test_cases."
+            exit 1
+          fi
+          for s in $SUITES; do
+            case "$s" in
+            conformance | hlt | llt) ;;
+            *)
+              echo "::error::Unknown suite '$s'; valid: conformance hlt llt."
+              exit 1
+              ;;
+            esac
+          done
+
+      - name: Resolve VM size from the case count
+        id: size
+        env:
+          TEST_CASES: ${{ inputs.test_cases }}
+          SUITES: ${{ inputs.suites }}
+          TEST_TAG: ${{ inputs.test_tag }}
+          REQUESTED: ${{ inputs.vm_size }}
+        run: |
+          set -euo pipefail
+          if [[ "$REQUESTED" != "auto" ]]; then
+            echo "size=$REQUESTED" >> "$GITHUB_OUTPUT"
+            case "$REQUESTED" in
+            *F2als*) jobs=2 ;;
+            *F4als*) jobs=4 ;;
+            *) jobs=8 ;;
+            esac
+            echo "jobs=$jobs" >> "$GITHUB_OUTPUT"
+            echo "Using the requested size $REQUESTED with -j$jobs."
+            exit 0
+          fi
+          args=()
+          cases=()
+          if [[ -n "$TEST_CASES" ]]; then read -ra cases <<<"$TEST_CASES"; fi
+          if [[ ${#cases[@]} -gt 0 ]]; then
+            for c in "${cases[@]}"; do args+=("--case" "$c"); done
+          else
+            # No explicit cases means whole suites; count those instead.
+            for s in $SUITES; do
+              case "$s" in
+              hlt | llt) args+=("--suite" "$s") ;;
+              conformance)
+                echo "::error::vm_size=auto cannot count the conformance suite; set vm_size explicitly."
+                exit 1
+                ;;
+              esac
+            done
+          fi
+          tag_args=()
+          if [[ -n "$TEST_TAG" ]]; then tag_args=(--test-tag "$TEST_TAG"); fi
+          uv sync --frozen
+          out=$(uv run cangjie-build plan-tests "${args[@]}" "${tag_args[@]}")
+          echo "$out"
+          size=$(sed -n 's/^vm_size=//p' <<<"$out")
+          count=$(sed -n 's/^cases=//p' <<<"$out")
+          echo "size=$size" >> "$GITHUB_OUTPUT"
+          echo "cases=$count" >> "$GITHUB_OUTPUT"
+          # Parallel cases are separate compile processes. More workers than
+          # cores oversubscribes the box, which stretches each case past
+          # --base-timeout and turns a slow run into a failed one.
+          case "$size" in
+          Standard_F2als_v7) jobs=2 ;;
+          Standard_F4als_v7) jobs=4 ;;
+          *) jobs=8 ;;
+          esac
+          echo "jobs=$jobs" >> "$GITHUB_OUTPUT"
+          echo "Resolved ${count} case(s) -> $size, -j$jobs."
+
+
+      - uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Generate JIT runner config
+        id: jit
+        env:
+          GH_TOKEN: ${{ secrets.RUNNER_REGISTRATION_PAT }}
+        run: |
+          set -euo pipefail
+          jit=$(.github/scripts/generate-jit.sh "${{ github.repository }}" "$RUNNER_LABEL")
+          echo "::add-mask::$jit"
+          {
+            echo 'jit<<__JIT_EOF__'
+            echo "$jit"
+            echo '__JIT_EOF__'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Render cloud-init
+        env:
+          JIT: ${{ steps.jit.outputs.jit }}
+        run: .github/scripts/render-cloud-init.sh .github/cloud-init/runner.template.yml cloud-init.yml
+
+      - name: Provision VM
+        id: vm
+        env:
+          RG: ${{ env.RG_NAME }}
+          VM_NAME: runner
+          REGIONS: ${{ inputs.vm_regions }}
+          SIZE: ${{ steps.size.outputs.size }}
+          PRIORITY: ${{ inputs.vm_priority }}
+          # The SDK archive, the test checkouts (1 GB) and the case work
+          # directory all live on the OS disk; 128 GB leaves room without
+          # paying for the build job's 256 GB.
+          OS_DISK_SIZE_GB: "128"
+          CLOUD_INIT: cloud-init.yml
+        run: .github/scripts/azure-provision-vm.sh | tee -a "$GITHUB_OUTPUT"
+
+      - name: Wait for runner registration
+        id: wait-runner
+        env:
+          GH_TOKEN: ${{ secrets.RUNNER_REGISTRATION_PAT }}
+        run: .github/scripts/wait-for-runner.sh "${{ github.repository }}" "$RUNNER_LABEL" 900
+
+      - name: Dump cloud-init log on runner-registration timeout
+        if: failure() && steps.wait-runner.outcome == 'failure'
+        continue-on-error: true
+        run: |
+          set +e
+          az vm run-command invoke -g "$RG_NAME" -n runner --command-id RunShellScript \
+            --scripts 'cloud-init status --long; tail -120 /var/log/cloud-init-output.log' \
+            --query "value[0].message" -o tsv
+
+  test:
+    name: Run suites (${{ inputs.suites }})
+    needs: provision
+    runs-on:
+      - self-hosted
+      - Linux
+      - X64
+      - ${{ needs.provision.outputs.runner_label }}
+    # Kept below the orphan reaper's MAX_AGE_HOURS (8h in reap-orphans.yml) with
+    # room for provisioning and runner startup, so the sweep never deletes this
+    # resource group while the job is still running.
+    timeout-minutes: 300
+    env:
+      CANGJIE_WORKSPACE: ${{ github.workspace }}/workspace
+      CANGJIE_BUILD_ROOT: ${{ github.workspace }}/buildtools
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: false
+
+      - name: Install Python harness dependencies
+        run: uv sync --frozen
+
+      # The suites need the same apt packages a developer machine has: the test
+      # cases invoke clang/gcc for the FFI cases, and the harness drives cjc.
+      - name: Install Ubuntu system packages
+        run: uv run cangjie-build install-system-deps
+
+      - name: Fetch SDK artifact
+        if: inputs.sdk_artifact != ''
+        uses: actions/download-artifact@d3f86a106a0ced5a84aa2dfb26f5b024e2c15d5b # v4
+        with:
+          name: ${{ inputs.sdk_artifact }}
+          path: ${{ env.CANGJIE_WORKSPACE }}/artifacts
+          run-id: ${{ inputs.sdk_artifact_run_id }}
+          # Reading another run's artifacts is a cross-run request, which the
+          # default GITHUB_TOKEN of this run cannot authorise.
+          github-token: ${{ secrets.RUNNER_REGISTRATION_PAT }}
+
+      - name: Download SDK from URL
+        if: inputs.sdk_artifact == '' && inputs.sdk_url != ''
+        run: |
+          set -euo pipefail
+          mkdir -p "$CANGJIE_WORKSPACE/artifacts"
+          curl -fsSL -o "$CANGJIE_WORKSPACE/artifacts/sdk.tar.gz" "${{ inputs.sdk_url }}"
+          if [[ -n "${{ inputs.stdx_url }}" ]]; then
+            curl -fsSL -o "$CANGJIE_WORKSPACE/artifacts/stdx.tar.gz" "${{ inputs.stdx_url }}"
+          fi
+
+      - name: Locate archives
+        id: archives
+        # Emit one flag per line into GITHUB_OUTPUT. A single space-joined string
+        # would break on any path containing a space.
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=("$CANGJIE_WORKSPACE"/artifacts/*.tar.gz "$CANGJIE_WORKSPACE"/artifacts/*.zip)
+          if [[ ${#files[@]} -eq 0 ]]; then
+            echo "::error::No SDK archive found in $CANGJIE_WORKSPACE/artifacts."
+            exit 1
+          fi
+          {
+            echo 'flags<<__FLAGS_EOF__'
+            for f in "${files[@]}"; do printf -- '--sdk-archive\n%s\n' "$f"; done
+            echo '__FLAGS_EOF__'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run suites
+        id: run-suites
+        env:
+          SUITES: ${{ inputs.suites }}
+          TEST_PATHS: ${{ inputs.test_paths }}
+          TEST_LIST: ${{ inputs.test_list }}
+          TEST_CASES: ${{ inputs.test_cases }}
+          CHANGED_IN: ${{ inputs.changed_in }}
+          JOBS: ${{ inputs.jobs || needs.provision.outputs.jobs }}
+          BASE_TIMEOUT: ${{ inputs.base_timeout }}
+          TEST_TAG: ${{ inputs.test_tag }}
+          ARCHIVE_FLAGS: ${{ steps.archives.outputs.flags }}
+        run: |
+          set -euo pipefail
+          args=()
+          read -ra suites <<<"$SUITES"
+          for s in "${suites[@]}"; do args+=("--suite" "$s"); done
+          read -ra paths <<<"$TEST_PATHS"
+          if [[ ${#paths[@]} -gt 0 ]]; then
+            args+=(--tests)
+            args+=("${paths[@]}")
+          fi
+          if [[ -n "$TEST_LIST" ]]; then args+=("--test-list" "$TEST_LIST"); fi
+          cases=()
+          if [[ -n "$TEST_CASES" ]]; then read -ra cases <<<"$TEST_CASES"; fi
+          for c in "${cases[@]}"; do args+=("--case" "$c"); done
+          if [[ -n "$CHANGED_IN" ]]; then args+=("--changed-in" "$CHANGED_IN"); fi
+          if [[ -n "$TEST_TAG" ]]; then args+=("--test-tag" "$TEST_TAG"); fi
+          # ARCHIVE_FLAGS holds one flag/value pair per line. mapfile on an
+          # empty here-string yields a single empty element, which would inject
+          # a bare empty argument, so only expand it when it has content.
+          archive_flags=()
+          if [[ -n "$ARCHIVE_FLAGS" ]]; then
+            mapfile -t archive_flags <<<"$ARCHIVE_FLAGS"
+          fi
+          uv run cangjie-build test "${args[@]}" \
+            -j "$JOBS" --base-timeout "$BASE_TIMEOUT" "${archive_flags[@]}"
+
+      - name: Collect reports
+        if: always()
+        # Copy the report files out of the per-suite work directories before
+        # uploading. The conformance run keeps its compiled .cjo/.a next to the
+        # report (measured ~2 MB for a single case), so uploading the tree
+        # wholesale would ship tens of GB of build output.
+        run: |
+          set -euo pipefail
+          src="$CANGJIE_WORKSPACE/test-results"
+          dst="$CANGJIE_WORKSPACE/test-reports"
+          mkdir -p "$dst"
+          if [[ ! -d "$src" ]]; then
+            # The suite step already failed if it never got this far; if it
+            # succeeded yet produced nothing, treat that as a failure rather than
+            # a green run with no evidence.
+            if [[ "${{ steps.run-suites.outcome }}" == "success" ]]; then
+              echo "::error::The suites reported success but wrote no results."
+              exit 1
+            fi
+            echo "No test-results directory; the suites did not start."
+            exit 0
+          fi
+          shopt -s nullglob
+          for suite in "$src"/*/; do
+            name=$(basename "$suite")
+            for f in results.log results.log.json results.json; do
+              if [[ -f "$suite$f" ]]; then cp "$suite$f" "$dst/${name}-${f}"; fi
+            done
+            for f in "$suite"log/*; do
+              if [[ -f "$f" ]]; then
+                mkdir -p "$dst/${name}-log"
+                cp "$f" "$dst/${name}-log/"
+              fi
+            done
+          done
+          du -sh "$dst"
+          find "$dst" -type f | head -20
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cangjie-test-reports-${{ github.run_id }}
+          path: ${{ env.CANGJIE_WORKSPACE }}/test-reports/**
+          if-no-files-found: warn
+
+  cleanup:
+    name: Tear down VM
+    needs: [provision, test]
+    if: always()
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Runs before the teardown deletes the group: the activity-log read only
+      # works while the group still exists. The priority comes from the
+      # provisioning step's output rather than the requested input, because a
+      # Spot request falls back to Regular and only the output knows which
+      # landed.
+      - name: Check whether the VM was evicted
+        if: needs.test.result == 'failure'
+        continue-on-error: true
+        env:
+          RG_NAME: ${{ needs.provision.outputs.rg_name }}
+          PRIORITY: ${{ needs.provision.outputs.priority }}
+          VM_NAME: runner
+        run: |
+          if [[ "$PRIORITY" != "Spot" ]]; then
+            echo "Provisioned as ${PRIORITY:-unknown}; nothing to attribute to Spot eviction."
+            exit 0
+          fi
+          .github/scripts/azure-eviction-check.sh "$RG_NAME" "$VM_NAME" 12
+
+      - name: Tear down resource group + runner registration
+        env:
+          GH_TOKEN: ${{ secrets.RUNNER_REGISTRATION_PAT }}
+        run: .github/scripts/azure-teardown.sh "${{ github.repository }}" "$RUNNER_LABEL" "$RG_NAME"

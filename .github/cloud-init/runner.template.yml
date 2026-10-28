@@ -23,6 +23,15 @@ write_files:
     content: |
       #!/usr/bin/env bash
       set -euo pipefail
+      # Stop billing on every exit path. run.sh returns non-zero when the job
+      # fails or the runner is killed, and `set -e` would otherwise abort this
+      # script before any explicit shutdown line -- exactly the cases where a VM
+      # would otherwise keep billing until the hourly orphan reaper notices.
+      # `az vm deallocate` semantics: a guest shutdown leaves the VM
+      # Stopped (allocated) on some images, so the workflow's group deletion is
+      # still the authoritative stop; this is the backstop when that job cannot
+      # run (cancelled run, evicted runner).
+      trap 'shutdown -h +2 || true' EXIT
       useradd -m -s /bin/bash -G sudo runner || true
       echo 'runner ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/runner
       chmod 440 /etc/sudoers.d/runner
@@ -36,9 +45,6 @@ write_files:
       chown -R runner:runner /home/runner/actions-runner
       # JIT-config is one-shot; runner exits after the single job.
       sudo -u runner -H bash -lc "./run.sh --jitconfig '$(cat /opt/runner-bootstrap/jit)'"
-      # Safety net: shut down ~2 min after the runner exits, so even if the
-      # cleanup job in the GitHub workflow gets cancelled we stop billing.
-      shutdown -h +2
 
 runcmd:
   - bash /opt/runner-bootstrap/start.sh

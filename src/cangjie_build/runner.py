@@ -33,6 +33,34 @@ def run(
     - Streams the child's combined output line-by-line through the logger.
     - Raises :class:`BuildError` on non-zero exit when ``check`` is true.
     """
+    rc, _ = run_capture(
+        cmd,
+        cwd=cwd,
+        env_overlay=env_overlay,
+        stage=stage,
+        check=check,
+        echo=echo,
+        capture=False,
+    )
+    return rc
+
+
+def run_capture(
+    cmd: Sequence[CommandPart],
+    *,
+    cwd: Path | None = None,
+    env_overlay: Mapping[str, str] | None = None,
+    stage: str = "run",
+    check: bool = True,
+    echo: bool = True,
+    capture: bool = True,
+) -> tuple[int, str]:
+    """Like :func:`run`, but also returns the combined output as a string.
+
+    Pass ``capture=False`` to stream without retaining: build commands can emit
+    hours of output, and holding that in memory on the build VM is not free.
+    Use the default only for short commands whose output the caller parses.
+    """
     if not cmd:
         raise BuildError(stage, "empty command")
 
@@ -60,12 +88,15 @@ def run(
         errors="replace",
     )
     assert proc.stdout is not None
+    captured: list[str] = []
     try:
         for line in proc.stdout:
             _log.info(line.rstrip())
+            if capture:
+                captured.append(line)
     finally:
         proc.stdout.close()
     rc = proc.wait()
     if check and rc != 0:
         raise BuildError(stage, f"command failed: {_format_cmd(cmd)}", returncode=rc)
-    return rc
+    return rc, "".join(captured)

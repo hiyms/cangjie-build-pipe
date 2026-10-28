@@ -32,7 +32,10 @@ jobs:
 
       - name: Reap orphan RGs
         env:
-          MAX_AGE_HOURS: "6"
+          # Must exceed the longest job that can still be running, otherwise the
+          # sweep deletes a live run's resource group mid-flight. The longest is
+          # the test workflow: provision + 5h test budget.
+          MAX_AGE_HOURS: "8"
         run: .github/scripts/azure-reap-orphans.sh
 
   reap-gcp:
@@ -51,5 +54,5 @@ jobs:
 
       - name: Reap orphan GCP VMs
         env:
-          MAX_AGE_HOURS: "6"
+          MAX_AGE_HOURS: "8"
         run: bash .github/scripts/gcp-reap-orphans.sh

@@ -8,11 +8,11 @@ from cangjie_build.config import RepoName, RepoOverride, build_config, make_repo
 from cangjie_build.errors import ConfigError
 
 
-def test_default_repo_set_uses_gitcode() -> None:
+def test_default_repo_set_uses_github_org() -> None:
     repos = make_repos(global_tag=None)
     assert set(repos) == set(RepoName)
     for r in repos.values():
-        assert r.url.startswith("https://gitcode.com/Cangjie/")
+        assert r.url.startswith("https://github.com/CangjieLanguage/")
         assert r.tag is None
 
 
@@ -26,7 +26,7 @@ def test_empty_string_override_treated_as_unset() -> None:
         global_tag="v1.0.0",
         overrides={RepoName.COMPILER: RepoOverride(url="", tag="")},
     )
-    assert repos[RepoName.COMPILER].url.startswith("https://gitcode.com")
+    assert repos[RepoName.COMPILER].url.startswith("https://github.com/CangjieLanguage")
     assert repos[RepoName.COMPILER].tag == "v1.0.0"
 
 
@@ -40,7 +40,7 @@ def test_per_repo_overrides_win_over_global_tag() -> None:
     assert repos[RepoName.COMPILER].url == "https://example.com/cc.git"
     assert repos[RepoName.COMPILER].tag == "feature-x"
 
-    assert repos[RepoName.RUNTIME].url.startswith("https://gitcode.com")
+    assert repos[RepoName.RUNTIME].url.startswith("https://github.com/CangjieLanguage")
     assert repos[RepoName.RUNTIME].tag == "v2.0.0"
 
     assert repos[RepoName.TOOLS].tag == "v1.0.0"

@@ -43,6 +43,15 @@ class Target(ABC):
         """
 
     @abstractmethod
+    def installed_runtime_lib_subdir(self) -> str:
+        """Subdir under ``<sdk>/runtime/lib/`` in the packaged SDK.
+
+        The build tree keeps one directory per build type; the packages step
+        folds the selected one into a single build-type-independent name, so
+        anything reading the packaged SDK must not append the build type.
+        """
+
+    @abstractmethod
     def stdx_target_subdir(self) -> str:
         """Subdir under cangjie_stdx/target produced by stdx build.py install."""
 
@@ -71,6 +80,9 @@ class _LinuxX64(Target):
     def runtime_lib_subdir(self, build_type: str) -> str:
         return f"linux_{build_type.lower()}_x86_64_cjnative"
 
+    def installed_runtime_lib_subdir(self) -> str:
+        return "linux_x86_64_cjnative"
+
     def stdx_target_subdir(self) -> str:
         return "linux_x86_64_cjnative"
 
@@ -97,6 +109,9 @@ class _WindowsX64(Target):
 
     def runtime_lib_subdir(self, build_type: str) -> str:
         return f"windows_{build_type.lower()}_x86_64_cjnative"
+
+    def installed_runtime_lib_subdir(self) -> str:
+        return "windows_x86_64_cjnative"
 
     def stdx_target_subdir(self) -> str:
         return "windows_x86_64_cjnative"
