@@ -1,8 +1,11 @@
 name: Reap orphan cloud resources
 
-# Safety net for cloud VM workflows: if a run gets cancelled before its cleanup
-# job executes, the VM keeps billing forever. This sweep runs every hour and
-# deletes stale cangjie-* Azure resource groups and GCP runner VMs.
+# Safety net for the Azure VM workflows: if a run gets cancelled before its
+# cleanup job executes, the VM keeps billing forever. This sweep runs hourly and
+# deletes stale cangjie-* Azure resource groups.
+#
+# Azure only: the GCP runner workflow was dropped, so there is nothing to reap
+# there and the GCP credentials are no longer required.
 
 on:
   schedule:
@@ -37,22 +40,3 @@ jobs:
           # the test workflow: provision + 5h test budget.
           MAX_AGE_HOURS: "8"
         run: .github/scripts/azure-reap-orphans.sh
-
-  reap-gcp:
-    name: Reap orphan GCP VMs
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
-        with:
-          project_id: default-490702
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-
-      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
-
-      - name: Reap orphan GCP VMs
-        env:
-          MAX_AGE_HOURS: "8"
-        run: bash .github/scripts/gcp-reap-orphans.sh

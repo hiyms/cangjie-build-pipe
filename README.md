@@ -69,7 +69,7 @@ lld，cangjie 自带的 clang 在 cjc emit 时也用 lld。
 
 ## 持续集成
 
-仓库提供三条构建工作流：
+仓库提供两条构建工作流：
 
 - `.github/workflows/build-cangjie.yml` — GitHub Actions 托管 runner 上
   的矩阵构建（`linux-x64` + `windows-x64`），多级 sccache（disk L0 +
@@ -80,21 +80,25 @@ lld，cangjie 自带的 clang 在 cjc emit 时也用 lld。
   fallback `eastus → eastus2 → centralus → westus3`）。GHA cache API 在重活下
   会 429 限流，改成把 sccache 写入 Azure Blob 容器
   （`SCCACHE_AZURE_BLOB_CONTAINER=sccache`）。
-- `.github/workflows/build-cangjie-gcp.yml` — GCP ephemeral VM 跑
-  `windows-x64` cross-compile（默认 `t2d-standard-16`，`asia-east1` 的
-  `a/b/c` zone fallback）。sccache 写入 GCS 桶
-  `gs://default-490702-cangjie-sccache`，SDK 与 STDX artifact 仍上传回
-  GitHub Actions。
 
-`.github/workflows/reap-orphans.yml` 是 Azure/GCP 的安全网：定时清理被取消
-或异常中断的 `cangjie-*` Azure resource group 和 GCP runner VM。
+`.github/workflows/reap-orphans.yml` 是 Azure 的安全网：定时清理被取消或异常
+中断的 `cangjie-*` Azure resource group。项目只支持 Azure，GCP 相关的工作流和
+脚本已移除。
 
 ### 缓存与凭据
 
 sccache 和交叉编译工具链都放在 Azure Blob 容器里，不用 GitHub Actions cache：
 后者对单个仓库有 10 GB 上限，重活下还会对写入限流（sccache 当初就是因为这个
 换掉的）。工具链是一棵约 2 GB 的树，只随 LLVM/openssl 的固定版本变化，适合当成
-普通 blob 对象。两个云平台共用同一个 blob，先构建的那边会为另一边预热。
+普通 blob 对象。
+
+工具链的 blob 名由它的固定参数推导（`cangjie-build toolchain-cache-key`）：
+llvm-mingw 的 tag、LLVM 的 commit、openssl 的版本、target triple。改动其中任何
+一项，名字就变了，旧对象立即不再被命中——不需要手动记得去改 key。推导放在 Python
+里而不是脚本里，就是为了让版本号和 blob 名不可能对不上。
+
+存储账户有一条生命周期规则，`toolchain` 容器里超过 60 天的对象会被删除。这样被
+新版取代的旧工具链不会一直占着空间。
 
 | secret | 用途 |
 | --- | --- |

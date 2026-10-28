@@ -484,3 +484,35 @@ def test_run_mapple_lists_files_through_the_selection_list_when_dirs_are_present
     # Both the file's directory and the requested directory must be listed.
     assert "compiler/" in body, body
     assert "runtime/" in body, body
+
+
+def test_toolchain_key_changes_when_a_pinned_input_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The key must follow the pins, so a rebuild never reuses a stale blob."""
+    from cangjie_build.toolchain import mingw, toolchain_cache_key
+
+    before = toolchain_cache_key("windows-x64")
+    monkeypatch.setattr(mingw, "OPENSSL_VERSION", "9.9.9")
+    after = toolchain_cache_key("windows-x64")
+    assert before != after
+    assert "openssl9.9.9" in after
+
+
+def test_toolchain_key_covers_the_llvm_commit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An earlier hand-maintained key omitted the LLVM commit entirely."""
+    from cangjie_build.toolchain import mingw, toolchain_cache_key
+
+    before = toolchain_cache_key("windows-x64")
+    monkeypatch.setattr(mingw, "LLVM_PROJECT_COMMIT", "f" * 40)
+    after = toolchain_cache_key("windows-x64")
+    assert before != after
+    assert "llvmffffffffffff" in after
+
+
+def test_toolchain_key_rejects_an_unknown_target() -> None:
+    from cangjie_build.errors import ConfigError
+    from cangjie_build.toolchain import toolchain_cache_key
+
+    with pytest.raises(ConfigError, match="no toolchain is built"):
+        toolchain_cache_key("macos-arm64")

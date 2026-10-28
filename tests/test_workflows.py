@@ -15,7 +15,6 @@ def test_platform_specific_scripts_are_prefixed() -> None:
         _read(path)
         for path in (
             ".github/workflows/build-cangjie-azure.yml",
-            ".github/workflows/build-cangjie-gcp.yml",
             ".github/workflows/test-cangjie-azure.yml",
             ".github/workflows/reap-orphans.yml",
         )
@@ -24,9 +23,6 @@ def test_platform_specific_scripts_are_prefixed() -> None:
     assert "azure-provision-vm.sh" in scripts
     assert "azure-teardown.sh" in scripts
     assert "azure-reap-orphans.sh" in scripts
-    assert "gcp-provision-vm.sh" in scripts
-    assert "gcp-teardown.sh" in scripts
-    assert "gcp-reap-orphans.sh" in scripts
 
     assert "provision-vm.sh" not in scripts
     assert "teardown.sh" not in scripts
@@ -39,11 +35,22 @@ def test_platform_specific_scripts_are_prefixed() -> None:
     assert ".github/scripts/reap-orphans.sh" not in workflows
 
 
-def test_gcp_provision_does_not_write_gcloud_output_to_github_outputs() -> None:
-    script = _read(".github/scripts/gcp-provision-vm.sh")
+def test_gcp_support_is_removed() -> None:
+    """The project is Azure-only; a leftover GCP reference means it was not."""
+    scripts = {path.name for path in (ROOT / ".github" / "scripts").glob("*.sh")}
+    workflows = {path.name for path in (ROOT / ".github" / "workflows").glob("*.yml")}
 
-    assert "-o none" not in script
-    assert "--quiet >/dev/null" in script
+    assert not any(name.startswith("gcp-") for name in scripts), scripts
+    assert not any("gcp" in name for name in workflows), workflows
+    for path in (
+        ".github/workflows/reap-orphans.yml",
+        ".github/workflows/build-cangjie-azure.yml",
+        ".github/workflows/test-cangjie-azure.yml",
+        "README.md",
+    ):
+        body = _read(path)
+        assert "GCP_SERVICE_ACCOUNT" not in body, path
+        assert "gcp-" not in body, path
 
 
 def test_azure_spot_precheck_reads_low_priority_quota() -> None:
@@ -88,10 +95,7 @@ def test_toolchain_blob_script_is_prefixed_and_wired() -> None:
     assert "CANGJIE_CACHE_CONNECTION_STRING" in body
     # A broken probe must not look like an empty cache.
     assert "BlobNotFound" in body
-    for workflow in (
-        ".github/workflows/build-cangjie-azure.yml",
-        ".github/workflows/build-cangjie-gcp.yml",
-    ):
+    for workflow in (".github/workflows/build-cangjie-azure.yml",):
         text = _read(workflow)
         assert "toolchain-blob.sh restore" in text
         assert "toolchain-blob.sh save" in text

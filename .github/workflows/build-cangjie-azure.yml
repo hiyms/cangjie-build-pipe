@@ -199,9 +199,10 @@ jobs:
         id: tc-key
         run: |
           set -euo pipefail
-          key=$(.github/scripts/toolchain-cache-key.sh windows-x64)
-          echo "key=$key" >> "$GITHUB_OUTPUT"
-          echo "blob=$key.tar.gz" >> "$GITHUB_OUTPUT"
+          # The script already returns the full object name, including the
+          # toolchain/ prefix the 60-day lifecycle rule matches on.
+          blob=$(.github/scripts/toolchain-cache-key.sh windows-x64)
+          echo "blob=$blob" >> "$GITHUB_OUTPUT"
           echo "path=${{ env.CANGJIE_BUILD_ROOT }}/llvm-mingw-w64" >> "$GITHUB_OUTPUT"
 
       # Blob storage rather than actions/cache: the cache API caps a repository

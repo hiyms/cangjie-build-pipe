@@ -155,6 +155,23 @@ def cmd_print_version(ctx: typer.Context) -> None:
     typer.echo(_cfg(ctx).cangjie_version)
 
 
+@app.command("toolchain-cache-key")
+def cmd_toolchain_cache_key(
+    target: Annotated[
+        TargetChoice,
+        typer.Option("--target", help="Which target's toolchain to key."),
+    ] = TargetChoice.windows_x64,
+) -> None:
+    """Print the blob key for a built toolchain, derived from its pinned inputs.
+
+    The key changes automatically when any pinned version or commit changes, so a
+    rebuild never reuses a blob produced from different sources.
+    """
+    from cangjie_build.toolchain import toolchain_cache_key
+
+    typer.echo(toolchain_cache_key(str(target)))
+
+
 @app.command("install-static-libs")
 def cmd_install_static_libs(ctx: typer.Context) -> None:
     """Build static ncurses + libedit (linux-x64 only, used by compiler stage)."""
