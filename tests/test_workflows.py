@@ -145,3 +145,18 @@ def test_azure_build_honours_the_target_input() -> None:
             assert "--target linux-x64" in line, line
             continue
         assert "--target ${{ inputs.target }}" in line, line
+
+
+def test_runner_version_is_recent_enough_to_be_accepted() -> None:
+    """GitHub rejects runners past a deprecation cutoff; 2.334.0 was refused."""
+    for path in (
+        ".github/workflows/build-cangjie-azure.yml",
+        ".github/workflows/test-cangjie-azure.yml",
+    ):
+        body = _read(path)
+        for line in body.splitlines():
+            if "RUNNER_VERSION:" not in line:
+                continue
+            version = line.split('"')[1]
+            major, minor, _ = (int(p) for p in version.split("."))
+            assert (major, minor) >= (2, 338), f"{path}: runner {version} is deprecated"

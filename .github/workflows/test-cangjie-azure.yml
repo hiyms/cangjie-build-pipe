@@ -93,7 +93,7 @@ defaults:
 env:
   RG_NAME: cangjie-test-${{ github.run_id }}-${{ github.run_attempt }}
   RUNNER_LABEL: cangjie-test-${{ github.run_id }}-${{ github.run_attempt }}
-  RUNNER_VERSION: "2.334.0"
+  RUNNER_VERSION: "2.338.2"
 
 jobs:
   provision:
