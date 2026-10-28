@@ -197,3 +197,18 @@ def test_test_workflow_can_point_at_another_test_repository() -> None:
     # sized from one repository and tested against another.
     assert body.count("--test-repo") == 2
     assert body.count("TEST_REPO: ${{ inputs.test_repo }}") == 2
+
+
+def test_test_workflow_installs_uv_before_it_is_used() -> None:
+    """The sizing step shells out to uv, so setup-uv has to come first."""
+    import re
+
+    body = _read(".github/workflows/test-cangjie-azure.yml")
+    provision = body.split("  provision:", 1)[1].split("\n  run:", 1)[0]
+    setup = provision.index("astral-sh/setup-uv")
+    sizing = provision.index("Resolve VM size from the case count")
+    assert setup < sizing
+    assert "uv sync --frozen" in provision
+    # And the step really is the first place uv appears.
+    first_uv_use = re.search(r"^\s+(uv |uv$)", provision, re.MULTILINE)
+    assert first_uv_use is not None and first_uv_use.start() > setup
