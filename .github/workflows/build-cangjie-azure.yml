@@ -207,12 +207,24 @@ jobs:
 
       # toolchain-blob.sh drives `az storage blob`, and this job runs on the
       # self-hosted VM, which has no Azure CLI: cloud-init installs only
-      # curl/jq/tar and system_deps has no azure-cli. azure/cli ships the CLI
-      # without pulling a full apt package into every build.
-      - uses: azure/cli@9eb25b8360668fb0ecbafa808d40e2197b2f5f52 # v3.0.0
-        with:
-          inlineScript: az version -o tsv
-          azcliversion: latest
+      # curl/jq/tar and system_deps has no azure-cli. The azure/cli action
+      # cannot help here because it runs the CLI in a container and the image
+      # has no Docker, so the CLI comes from Microsoft's apt repository.
+      # Only the windows target touches the blob, so the linux build skips this.
+      - name: Install Azure CLI
+        if: inputs.target == 'windows-x64'
+        run: |
+          set -euo pipefail
+          curl -sLS https://packages.microsoft.com/keys/microsoft.asc \
+            | gpg --dearmor | sudo tee /usr/share/keyrings/microsoft.gpg >/dev/null
+          # The codename comes from os-release; cloud-init installs no extra tool.
+          codename=$(. /etc/os-release && echo "$VERSION_CODENAME")
+          echo "deb [signed-by=/usr/share/keyrings/microsoft.gpg] \
+            https://packages.microsoft.com/repos/azure-cli/ ${codename} main" \
+            | sudo tee /etc/apt/sources.list.d/azure-cli.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq azure-cli
+          az version -o tsv
 
       # The cached artifact is the MinGW cross toolchain. A linux-x64 build never
       # produces it, so these three steps are skipped rather than restoring and

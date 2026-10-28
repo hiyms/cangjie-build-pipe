@@ -160,3 +160,17 @@ def test_runner_version_is_recent_enough_to_be_accepted() -> None:
             version = line.split('"')[1]
             major, minor, _ = (int(p) for p in version.split("."))
             assert (major, minor) >= (2, 338), f"{path}: runner {version} is deprecated"
+
+
+def test_azure_cli_install_covers_the_runner_and_is_scoped_to_windows() -> None:
+    """The azure/cli action needs Docker, which the ephemeral image does not have."""
+    body = _read(".github/workflows/build-cangjie-azure.yml")
+
+    # The action runs the CLI in a container, so it cannot be used on this VM.
+    assert "azure/cli@" not in body
+    assert "packages.microsoft.com/repos/azure-cli" in body
+    # Codename comes from os-release; lsb_release is not installed by cloud-init.
+    assert "/etc/os-release" in body
+    assert "lsb_release" not in body
+    # Only the windows target touches the blob cache, so linux must skip the CLI.
+    assert "      - name: Install Azure CLI\n        if: inputs.target == 'windows-x64'" in body
