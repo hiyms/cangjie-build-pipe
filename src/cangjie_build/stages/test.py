@@ -10,6 +10,7 @@ from typing import Literal, cast
 
 from cangjie_build.config import BuildConfig
 from cangjie_build.errors import BuildError
+from cangjie_build.git import shallow_clone
 from cangjie_build.logging_setup import get_logger, stage
 from cangjie_build.runner import run as run_cmd
 from cangjie_build.runner import run_capture
@@ -103,12 +104,9 @@ def _checkout(url: str, dest: Path, *, tag: str | None, stage_name: str) -> Path
                 )
         _log.info("%s already at %s, reusing", stage_name, dest)
         return dest
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    cmd = ["git", "clone", "--depth", "1"]
-    if tag:
-        cmd += ["--branch", tag]
-    cmd += [url, str(dest)]
-    run_cmd(cmd, stage=stage_name)
+    # shallow_clone understands a bare commit SHA as well as a branch, which
+    # matters because a pull request's cases exist only as a commit.
+    shallow_clone(url, dest, tag=tag)
     return require_dir(dest, stage=stage_name)
 
 

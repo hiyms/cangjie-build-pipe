@@ -596,3 +596,25 @@ def test_lsp_is_patched_to_use_sccache_as_its_cmake_launcher(
     # Second call is a no-op, not a double insertion.
     tools.patch_lsp_launcher(cfg)
     assert build_py.read_text().count("-DCMAKE_C_COMPILER_LAUNCHER=sccache") == 1
+
+
+def test_test_checkout_routes_through_shallow_clone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A PR's cases exist only as a commit, which `git clone --branch` rejects."""
+    from cangjie_build.stages import test as test_stage
+
+    seen: list[tuple[str, Path, str | None]] = []
+
+    def fake_clone(url: str, dest: Path, *, tag: str | None = None) -> None:
+        seen.append((url, dest, tag))
+        dest.mkdir(parents=True)
+        (dest / "x.cj").write_text("main() {}\n")
+
+    monkeypatch.setattr(test_stage, "shallow_clone", fake_clone)
+    sha = "93a747bf98d9a2ded2a266a904a5494dd4e491e7"
+    dest = test_stage._checkout(
+        "https://example.invalid/t.git", tmp_path / "t", tag=sha, stage_name="t"
+    )
+    assert seen == [("https://example.invalid/t.git", tmp_path / "t", sha)]
+    assert dest == tmp_path / "t"
