@@ -174,3 +174,16 @@ def test_azure_cli_install_covers_the_runner_and_is_scoped_to_windows() -> None:
     assert "lsb_release" not in body
     # Only the windows target touches the blob cache, so linux must skip the CLI.
     assert "      - name: Install Azure CLI\n        if: inputs.target == 'windows-x64'" in body
+
+
+def test_sccache_connection_string_is_normalised_before_use() -> None:
+    """sccache appends /<container>/<path>; a trailing slash makes it InvalidUri."""
+    script = ".github/scripts/normalize-connection-string.sh"
+    assert (ROOT / script).is_file()
+
+    body = _read(".github/workflows/build-cangjie-azure.yml")
+    assert "normalize-connection-string.sh" in body
+    # The fix has to reach later steps, so it goes through GITHUB_ENV, and it
+    # must run before any build step reads the variable.
+    assert 'SCCACHE_AZURE_CONNECTION_STRING=$normalized" >> "$GITHUB_ENV"' in body
+    assert body.index("Normalise the sccache connection string") < body.index("Build compiler")

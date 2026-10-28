@@ -187,6 +187,12 @@ jobs:
       # dedicated blob container in eastus2. With the default region list
       # starting at eastus this is a short cross-region hop, but sccache only
       # moves compile artefacts (a few GB), so it stays cheap.
+      #
+      # The secret is the raw output of `az storage account
+      # show-connection-string`, whose *Endpoint values all end in "/". sccache
+      # appends "/<container>/<path>" to that, producing a double slash that
+      # Azure rejects as InvalidUri, so "Setup sccache" rewrites the variable
+      # through normalize-connection-string.sh before the build sees it.
       SCCACHE_AZURE_CONNECTION_STRING: ${{ secrets.SCCACHE_AZURE_CONNECTION_STRING }}
       SCCACHE_AZURE_BLOB_CONTAINER: sccache
     steps:
@@ -204,6 +210,15 @@ jobs:
 
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+
+      # sccache reads this variable itself, so it has to be fixed in the
+      # environment every later step inherits, not just in one step.
+      - name: Normalise the sccache connection string
+        run: |
+          set -euo pipefail
+          normalized=$(.github/scripts/normalize-connection-string.sh \
+            "$SCCACHE_AZURE_CONNECTION_STRING")
+          echo "SCCACHE_AZURE_CONNECTION_STRING=$normalized" >> "$GITHUB_ENV"
 
       # toolchain-blob.sh drives `az storage blob`, and this job runs on the
       # self-hosted VM, which has no Azure CLI: cloud-init installs only
