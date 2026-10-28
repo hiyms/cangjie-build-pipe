@@ -13,6 +13,10 @@ _LAUNCHER_VARS = ("CMAKE_C_COMPILER_LAUNCHER", "CMAKE_CXX_COMPILER_LAUNCHER")
 def describe_backends() -> str:
     """Summarise the configured sccache storage chain for log output.
 
+    This mirrors sccache's backend list, not the set this project configures:
+    the pipeline only ever sets the GitHub, azblob and disk entries, but a
+    manually exported gs/s3/redis backend should still be reported accurately.
+
     Order matches sccache's own backend selection precedence — see
     https://github.com/mozilla/sccache/blob/main/docs/Configuration.md
     (multilevel chain > GHA > azure > S3 > GCS > redis > memcached >

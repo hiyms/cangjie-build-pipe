@@ -132,6 +132,8 @@ jobs:
         id: tc-key
         run: |
           set -euo pipefail
+          # Opaque cache key here, not a filename: the script's .tar.gz suffix
+          # belongs to the blob path the Azure workflows use.
           echo "key=$(.github/scripts/toolchain-cache-key.sh ${{ matrix.target }})" >> "$GITHUB_OUTPUT"
           if [[ "${{ matrix.target }}" == "windows-x64" ]]; then
             echo "path=${{ env.CANGJIE_BUILD_ROOT }}/llvm-mingw-w64" >> "$GITHUB_OUTPUT"
