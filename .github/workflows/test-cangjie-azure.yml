@@ -32,8 +32,12 @@ on:
         description: "Direct URL to the matching STDX archive (optional with sdk_url)."
         required: false
         default: ""
+      test_repo:
+        description: "Override the cangjie_test repository URL."
+        required: false
+        default: ""
       test_tag:
-        description: "Branch/tag for cangjie_test and cangjie_test_framework (default = dev)."
+        description: "Branch, tag or commit SHA for cangjie_test and cangjie_test_framework."
         required: false
         default: "dev"
       suites:
@@ -154,6 +158,7 @@ jobs:
           TEST_CASES: ${{ inputs.test_cases }}
           SUITES: ${{ inputs.suites }}
           TEST_TAG: ${{ inputs.test_tag }}
+          TEST_REPO: ${{ inputs.test_repo }}
           REQUESTED: ${{ inputs.vm_size }}
         run: |
           set -euo pipefail
@@ -186,7 +191,8 @@ jobs:
             done
           fi
           tag_args=()
-          if [[ -n "$TEST_TAG" ]]; then tag_args=(--test-tag "$TEST_TAG"); fi
+          if [[ -n "$TEST_REPO" ]]; then tag_args+=(--test-repo "$TEST_REPO"); fi
+          if [[ -n "$TEST_TAG" ]]; then tag_args+=(--test-tag "$TEST_TAG"); fi
           uv sync --frozen
           out=$(uv run cangjie-build plan-tests "${args[@]}" "${tag_args[@]}")
           echo "$out"
@@ -341,6 +347,7 @@ jobs:
           JOBS: ${{ inputs.jobs || needs.provision.outputs.jobs }}
           BASE_TIMEOUT: ${{ inputs.base_timeout }}
           TEST_TAG: ${{ inputs.test_tag }}
+          TEST_REPO: ${{ inputs.test_repo }}
           ARCHIVE_FLAGS: ${{ steps.archives.outputs.flags }}
         run: |
           set -euo pipefail
@@ -357,6 +364,7 @@ jobs:
           if [[ -n "$TEST_CASES" ]]; then read -ra cases <<<"$TEST_CASES"; fi
           for c in "${cases[@]}"; do args+=("--case" "$c"); done
           if [[ -n "$CHANGED_IN" ]]; then args+=("--changed-in" "$CHANGED_IN"); fi
+          if [[ -n "$TEST_REPO" ]]; then args+=("--test-repo" "$TEST_REPO"); fi
           if [[ -n "$TEST_TAG" ]]; then args+=("--test-tag" "$TEST_TAG"); fi
           # ARCHIVE_FLAGS holds one flag/value pair per line. mapfile on an
           # empty here-string yields a single empty element, which would inject

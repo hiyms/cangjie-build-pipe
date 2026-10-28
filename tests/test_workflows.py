@@ -187,3 +187,13 @@ def test_sccache_connection_string_is_normalised_before_use() -> None:
     # must run before any build step reads the variable.
     assert 'SCCACHE_AZURE_CONNECTION_STRING=$normalized" >> "$GITHUB_ENV"' in body
     assert body.index("Normalise the sccache connection string") < body.index("Build compiler")
+
+
+def test_test_workflow_can_point_at_another_test_repository() -> None:
+    """A pull request's cases live on a forge GitHub does not mirror."""
+    body = _read(".github/workflows/test-cangjie-azure.yml")
+    assert "      test_repo:\n" in body
+    # Both the sizing step and the run step must use it, or the VM would be
+    # sized from one repository and tested against another.
+    assert body.count("--test-repo") == 2
+    assert body.count("TEST_REPO: ${{ inputs.test_repo }}") == 2
