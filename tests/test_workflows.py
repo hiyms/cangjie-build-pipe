@@ -119,3 +119,29 @@ def test_azure_workflows_use_oidc_not_a_static_password() -> None:
         assert "subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}" in text
         # A client secret in the workflow would defeat the federated credential.
         assert "AZURE_CLIENT_SECRET" not in text
+
+
+def test_azure_build_honours_the_target_input() -> None:
+    body = _read(".github/workflows/build-cangjie-azure.yml")
+
+    # The input exists and offers both targets.
+    assert "      target:\n" in body
+    assert "          - linux-x64\n" in body
+    assert "          - windows-x64\n" in body
+
+    # MinGW and its blob cache are windows-only; linux builds static libs instead.
+    assert "if: inputs.target == 'windows-x64'" in body
+    assert "if: inputs.target == 'linux-x64'" in body
+    assert "install-static-libs" in body
+
+    # Every harness invocation must take the target from the input, never pin it,
+    # or selecting linux-x64 would silently build the Windows cross target.
+    for line in body.splitlines():
+        if "--target" not in line:
+            continue
+        # The static-lib step is itself gated on linux-x64, so naming it there is
+        # the condition restated; everything else must follow the input.
+        if "install-static-libs" in line:
+            assert "--target linux-x64" in line, line
+            continue
+        assert "--target ${{ inputs.target }}" in line, line

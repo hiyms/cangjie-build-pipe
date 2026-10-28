@@ -28,6 +28,14 @@ on:
         description: "Global Cangjie tag/branch (default = dev)."
         required: false
         default: "dev"
+      target:
+        description: "SDK target. linux-x64 needs no MinGW toolchain."
+        required: false
+        default: "linux-x64"
+        type: choice
+        options:
+          - linux-x64
+          - windows-x64
       build_type:
         description: "Build type."
         required: true
@@ -161,7 +169,7 @@ jobs:
             --query "value[0].message" -o tsv
 
   build:
-    name: Build SDK (windows-x64)
+    name: Build SDK (${{ inputs.target }})
     needs: provision
     runs-on:
       - self-hosted
@@ -206,8 +214,12 @@ jobs:
           inlineScript: az version -o tsv
           azcliversion: latest
 
+      # The cached artifact is the MinGW cross toolchain. A linux-x64 build never
+      # produces it, so these three steps are skipped rather than restoring and
+      # then caching an absent directory.
       - name: Compute toolchain cache key
         id: tc-key
+        if: inputs.target == 'windows-x64'
         run: |
           set -euo pipefail
           # Prints the object name only; the container (inputs.cache_container)
@@ -221,6 +233,7 @@ jobs:
       # off it too. The toolchain is one tree keyed by its pinned versions.
       - name: Restore toolchain from blob
         id: tc-cache
+        if: inputs.target == 'windows-x64'
         env:
           CANGJIE_CACHE_CONNECTION_STRING: ${{ secrets.CANGJIE_CACHE_CONNECTION_STRING }}
         run: |
@@ -232,21 +245,27 @@ jobs:
           grep -q '^hit=true$' /tmp/tc-restore.out && echo "cache-hit=true" >> "$GITHUB_OUTPUT" || echo "cache-hit=false" >> "$GITHUB_OUTPUT"
 
       - name: Build MinGW toolchain
-        if: steps.tc-cache.outputs.cache-hit != 'true'
+        if: inputs.target == 'windows-x64' && steps.tc-cache.outputs.cache-hit != 'true'
         # mingw.py passes -DLLVM_USE_LINKER=lld to build-llvm.sh when ld.lld
         # is on PATH (the apt 'lld' package, installed via install-system-deps).
         # Host LLVM bootstrap links 5-10x faster; cross-target scripts keep
         # the mingw clang wrappers' default linker.
-        run: uv run cangjie-build --target windows-x64 install-mingw
+        run: uv run cangjie-build --target ${{ inputs.target }} install-mingw
 
       # Save as soon as it is built, independent of whether the later stages or
       # this whole job succeed: a Spot eviction during the Cangjie compile would
       # otherwise lose the 30-60 minutes of toolchain work for the next run too.
+      # ncurses + libedit are linked statically into the linux compiler; the
+      # Windows cross build gets them from the MinGW sysroot instead.
+      - name: Build static libs (linux-x64)
+        if: inputs.target == 'linux-x64'
+        run: uv run cangjie-build --target linux-x64 install-static-libs
+
       - name: Save toolchain to blob
         # Both sentinels that mingw.is_installed() requires. Gating on the clang
         # wrapper alone would upload a tree whose openssl stage failed, and the
         # next run would treat that broken blob as a hit and skip the rebuild.
-        if: always() && steps.tc-cache.outputs.cache-hit != 'true' && hashFiles(format('{0}/llvm-mingw-w64/bin/x86_64-w64-mingw32-clang', env.CANGJIE_BUILD_ROOT)) != '' && hashFiles(format('{0}/llvm-mingw-w64/x86_64-w64-mingw32/lib/libssl.a', env.CANGJIE_BUILD_ROOT)) != ''
+        if: always() && inputs.target == 'windows-x64' && steps.tc-cache.outputs.cache-hit != 'true' && hashFiles(format('{0}/llvm-mingw-w64/bin/x86_64-w64-mingw32-clang', env.CANGJIE_BUILD_ROOT)) != '' && hashFiles(format('{0}/llvm-mingw-w64/x86_64-w64-mingw32/lib/libssl.a', env.CANGJIE_BUILD_ROOT)) != ''
         env:
           CANGJIE_CACHE_CONNECTION_STRING: ${{ secrets.CANGJIE_CACHE_CONNECTION_STRING }}
         run: |
@@ -281,7 +300,7 @@ jobs:
           mapfile -t override_args < <(.github/scripts/build-fetch-args.sh)
           args+=("${override_args[@]}")
           uv run cangjie-build \
-            --target windows-x64 \
+            --target ${{ inputs.target }} \
             --build-type ${{ inputs.build_type }} \
             --cangjie-version "${{ steps.cjver.outputs.value }}" \
             fetch "${args[@]}"
@@ -292,7 +311,7 @@ jobs:
       - name: Build compiler
         run: |
           uv run cangjie-build \
-            --target windows-x64 \
+            --target ${{ inputs.target }} \
             --build-type ${{ inputs.build_type }} \
             --cangjie-version "${{ steps.cjver.outputs.value }}" \
             build compiler
@@ -300,7 +319,7 @@ jobs:
       - name: Build runtime
         run: |
           uv run cangjie-build \
-            --target windows-x64 \
+            --target ${{ inputs.target }} \
             --build-type ${{ inputs.build_type }} \
             --cangjie-version "${{ steps.cjver.outputs.value }}" \
             build runtime
@@ -308,7 +327,7 @@ jobs:
       - name: Build stdlib
         run: |
           uv run cangjie-build \
-            --target windows-x64 \
+            --target ${{ inputs.target }} \
             --build-type ${{ inputs.build_type }} \
             --cangjie-version "${{ steps.cjver.outputs.value }}" \
             build stdlib
@@ -316,7 +335,7 @@ jobs:
       - name: Build stdx
         run: |
           uv run cangjie-build \
-            --target windows-x64 \
+            --target ${{ inputs.target }} \
             --build-type ${{ inputs.build_type }} \
             --cangjie-version "${{ steps.cjver.outputs.value }}" \
             build stdx
@@ -324,7 +343,7 @@ jobs:
       - name: Build tools
         run: |
           uv run cangjie-build \
-            --target windows-x64 \
+            --target ${{ inputs.target }} \
             --build-type ${{ inputs.build_type }} \
             --cangjie-version "${{ steps.cjver.outputs.value }}" \
             build tools
@@ -332,7 +351,7 @@ jobs:
       - name: Package SDK
         run: |
           uv run cangjie-build \
-            --target windows-x64 \
+            --target ${{ inputs.target }} \
             --build-type ${{ inputs.build_type }} \
             --cangjie-version "${{ steps.cjver.outputs.value }}" \
             package
@@ -340,7 +359,7 @@ jobs:
       - name: Verify SDK
         run: |
           uv run cangjie-build \
-            --target windows-x64 \
+            --target ${{ inputs.target }} \
             --build-type ${{ inputs.build_type }} \
             --cangjie-version "${{ steps.cjver.outputs.value }}" \
             verify
@@ -348,8 +367,8 @@ jobs:
       - name: Upload SDK + STDX artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: cangjie-windows-x64-${{ steps.cjver.outputs.value }}
-          path: ${{ env.CANGJIE_WORKSPACE }}/software/cangjie-*-windows-x64-${{ steps.cjver.outputs.value }}*.*
+          name: cangjie-${{ inputs.target }}-${{ steps.cjver.outputs.value }}
+          path: ${{ env.CANGJIE_WORKSPACE }}/software/cangjie-*-${{ inputs.target }}-${{ steps.cjver.outputs.value }}*.*
           if-no-files-found: error
 
       # Belt-and-suspenders flush: this backend is already single-tier

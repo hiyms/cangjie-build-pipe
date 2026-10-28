@@ -108,3 +108,52 @@ def test_repo_path_resolves(tmp_path: Path) -> None:
     assert cfg.repo_path("stdx") == tmp_path.resolve() / "cangjie_stdx"
     with pytest.raises(ConfigError):
         cfg.repo_path("nope")
+
+
+def test_shallow_clone_accepts_a_commit_sha(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A PR head is only reachable by SHA, and `git clone --branch` rejects one."""
+    from cangjie_build import git as git_mod
+
+    calls: list[list[str]] = []
+
+    def fake_run(cmd: list[str], *, stage: str) -> None:
+        calls.append(cmd)
+
+    monkeypatch.setattr(git_mod, "run", fake_run)
+    sha = "011f9c831eed6aa3d4d583f1f5d8ebcbb23a7e27"
+    git_mod.shallow_clone("https://example.invalid/r.git", tmp_path / "r", tag=sha)
+
+    flat = " ".join(" ".join(c) for c in calls)
+    assert "clone --depth 1 --branch" not in flat
+    assert "init --quiet" in flat
+    assert f"fetch --depth 1 origin {sha}" in flat
+    assert "checkout --quiet FETCH_HEAD" in flat
+
+
+def test_shallow_clone_still_uses_branch_for_a_branch_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cangjie_build import git as git_mod
+
+    calls: list[list[str]] = []
+
+    def fake_run(cmd: list[str], *, stage: str) -> None:
+        calls.append(cmd)
+
+    monkeypatch.setattr(git_mod, "run", fake_run)
+    git_mod.shallow_clone("https://example.invalid/r.git", tmp_path / "r", tag="dev")
+
+    assert calls == [
+        [
+            "git",
+            "clone",
+            "--depth",
+            "1",
+            "--branch",
+            "dev",
+            "https://example.invalid/r.git",
+            str(tmp_path / "r"),
+        ]
+    ]
