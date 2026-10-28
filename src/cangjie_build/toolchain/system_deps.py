@@ -38,6 +38,11 @@ APT_PACKAGES: tuple[str, ...] = (
     "texinfo",
     "binutils",
     "libelf-dev",
+    # lldb's LLDBConfig.cmake makes Python a hard requirement when
+    # LLDB_ENABLE_PYTHON=ON: FindPythonAndSwig fails without Python3_INCLUDE_DIRS,
+    # which the interpreter package alone does not ship. cjdb embeds Python, so
+    # this cannot be turned off without dropping that from the SDK.
+    "python3-dev",
     "libdwarf-dev",
     "openssh-client",
     "ssh",

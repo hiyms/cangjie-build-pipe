@@ -535,3 +535,12 @@ def test_mingw_w64_is_pinned_rather_than_tracking_a_branch() -> None:
     # A branch clone would make the artifact depend on upstream's current HEAD.
     assert len(mingw.MINGW_W64_COMMIT) == 40
     assert all(c in "0123456789abcdef" for c in mingw.MINGW_W64_COMMIT)
+
+
+def test_system_deps_include_the_python_headers_lldb_needs() -> None:
+    """lldb's FindPythonAndSwig fails without Python3_INCLUDE_DIRS."""
+    from cangjie_build.toolchain import system_deps
+
+    assert "python3-dev" in system_deps.APT_PACKAGES
+    # swig must stay: the same CMake module looks for it.
+    assert "swig" in system_deps.APT_PACKAGES
