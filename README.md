@@ -93,9 +93,14 @@ sccache 和交叉编译工具链都放在 Azure Blob 容器里，不用 GitHub A
 普通 blob 对象。
 
 工具链的 blob 名由它的固定参数推导（`cangjie-build toolchain-cache-key`）：
-llvm-mingw 的 tag、LLVM 的 commit、openssl 的版本、target triple。改动其中任何
-一项，名字就变了，旧对象立即不再被命中——不需要手动记得去改 key。推导放在 Python
-里而不是脚本里，就是为了让版本号和 blob 名不可能对不上。
+llvm-mingw 的 tag、LLVM 的 commit、mingw-w64 的 commit、openssl 的版本、target
+triple，加上各自的配方版本号（`RECIPE_VERSION`，改了 configure 参数或环境变量就
+手动 +1）。改动其中任何一项，名字就变了，旧对象立即不再被命中——不需要手动记得去改
+key。推导放在 Python 里而不是脚本里，就是为了让版本号和 blob 名不可能对不上。
+
+mingw-w64 原本是按远端默认分支 `--depth 1` 克隆的，没有固定 commit。那意味着上游
+一有新提交，产出的工具链就变了而 key 不变，缓存会返回一份来路不明的产物。现在它
+和 LLVM 一样固定到具体 commit，也纳入 key。
 
 存储账户有一条生命周期规则，`toolchain` 容器里超过 60 天的对象会被删除。这样被
 新版取代的旧工具链不会一直占着空间。

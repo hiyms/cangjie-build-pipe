@@ -25,6 +25,10 @@ LLVM_MINGW_URL = f"https://github.com/mstorsjo/llvm-mingw/archive/refs/tags/{LLV
 LLVM_PROJECT_REMOTE = "https://gitee.com/openharmony/third_party_llvm-project.git"
 LLVM_PROJECT_COMMIT = "5c68a1cb123161b54b72ce90e7975d95a8eaf2a4"
 MINGW_W64_REMOTE = "https://gitee.com/openharmony/third_party_mingw-w64.git"
+# Pinned like LLVM_PROJECT_COMMIT. A --depth 1 clone of a branch takes whatever
+# HEAD is at build time, which would make the produced toolchain -- and the cache
+# key derived from these pins -- silently dependent on upstream's current state.
+MINGW_W64_COMMIT = "feea9a87fa42591b298b18fe0e07198f0b8c2f63"
 
 OPENSSL_VERSION = "3.0.9"
 OPENSSL_URL = (
@@ -33,6 +37,11 @@ OPENSSL_URL = (
 
 INSTALL_DIR_NAME = "llvm-mingw-w64"
 TARGET_TRIPLE = "x86_64-w64-mingw32"
+
+# Bump when this module's build recipe changes in a way that alters the produced
+# tree: configure flags, the libssp fill, or which host linker is selected. The
+# downloads are keyed by their own versions; this covers the steps in between.
+RECIPE_VERSION = "1"
 
 
 def install_path(build_root: Path) -> Path:
@@ -88,6 +97,14 @@ def install(build_root: Path, *, jobs: int | None = None) -> None:
             run(
                 ["git", "clone", "--depth", "1", MINGW_W64_REMOTE, str(mingw_w64)],
                 stage="mingw.mingw-w64.clone",
+            )
+            run(
+                ["git", "-C", str(mingw_w64), "fetch", "--depth", "1", "origin", MINGW_W64_COMMIT],
+                stage="mingw.mingw-w64.fetch",
+            )
+            run(
+                ["git", "-C", str(mingw_w64), "checkout", "--detach", MINGW_W64_COMMIT],
+                stage="mingw.mingw-w64.checkout",
             )
 
         toolchain_env = {"TOOLCHAIN_ARCHS": "x86_64"}

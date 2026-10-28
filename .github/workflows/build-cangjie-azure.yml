@@ -13,6 +13,8 @@ name: Build Cangjie SDK on Azure VM
 #                             POST /repos/.../actions/runners/generate-jitconfig
 #                             — GITHUB_TOKEN cannot hold the administration
 #                             scope, so this can't be replaced by it.
+#   CANGJIE_CACHE_CONNECTION_STRING     - storage account for the toolchain blob
+#   SCCACHE_AZURE_CONNECTION_STRING     - storage account for sccache
 #
 # Azure auth uses OIDC + federated credentials (no static SP password).
 # Azure operational helpers live in .github/scripts/azure-*.sh; shared helpers
@@ -195,15 +197,24 @@ jobs:
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
 
+      # toolchain-blob.sh drives `az storage blob`, and this job runs on the
+      # self-hosted VM, which has no Azure CLI: cloud-init installs only
+      # curl/jq/tar and system_deps has no azure-cli. azure/cli ships the CLI
+      # without pulling a full apt package into every build.
+      - uses: azure/cli@9eb25b8360668fb0ecbafa808d40e2197b2f5f52 # v3.0.0
+        with:
+          inlineScript: az version -o tsv
+          azcliversion: latest
+
       - name: Compute toolchain cache key
         id: tc-key
         run: |
           set -euo pipefail
-          # The script already returns the full object name, including the
-          # toolchain/ prefix the 60-day lifecycle rule matches on.
+          # Prints the object name only; the container (inputs.cache_container)
+          # is passed separately. The lifecycle rule's prefix spans both, since
+          # Azure matches the container name as part of the path.
           blob=$(.github/scripts/toolchain-cache-key.sh windows-x64)
           echo "blob=$blob" >> "$GITHUB_OUTPUT"
-          echo "path=${{ env.CANGJIE_BUILD_ROOT }}/llvm-mingw-w64" >> "$GITHUB_OUTPUT"
 
       # Blob storage rather than actions/cache: the cache API caps a repository
       # at 10 GB and throttles writes under load, which is why sccache was moved
@@ -232,7 +243,10 @@ jobs:
       # this whole job succeed: a Spot eviction during the Cangjie compile would
       # otherwise lose the 30-60 minutes of toolchain work for the next run too.
       - name: Save toolchain to blob
-        if: always() && steps.tc-cache.outputs.cache-hit != 'true' && hashFiles(format('{0}/llvm-mingw-w64/bin/x86_64-w64-mingw32-clang', env.CANGJIE_BUILD_ROOT)) != ''
+        # Both sentinels that mingw.is_installed() requires. Gating on the clang
+        # wrapper alone would upload a tree whose openssl stage failed, and the
+        # next run would treat that broken blob as a hit and skip the rebuild.
+        if: always() && steps.tc-cache.outputs.cache-hit != 'true' && hashFiles(format('{0}/llvm-mingw-w64/bin/x86_64-w64-mingw32-clang', env.CANGJIE_BUILD_ROOT)) != '' && hashFiles(format('{0}/llvm-mingw-w64/x86_64-w64-mingw32/lib/libssl.a', env.CANGJIE_BUILD_ROOT)) != ''
         env:
           CANGJIE_CACHE_CONNECTION_STRING: ${{ secrets.CANGJIE_CACHE_CONNECTION_STRING }}
         run: |

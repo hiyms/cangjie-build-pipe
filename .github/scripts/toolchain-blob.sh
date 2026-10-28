@@ -16,6 +16,10 @@
 # `restore` extracts into <dest_dir> and prints hit=true or hit=false on stdout.
 # `save` uploads a tar of <src_dir>. `exists` prints true or false.
 #
+# Note the asymmetry: save takes the toolchain directory itself and archives its
+# basename, so restore must be given that directory's *parent* -- passing
+# .../llvm-mingw-w64 to restore would nest it as llvm-mingw-w64/llvm-mingw-w64.
+#
 # Every failure is loud: a broken cache must never be reported as a miss,
 # because a silent miss costs a full 30-60 minute LLVM build next run.
 set -euo pipefail
@@ -34,16 +38,19 @@ az_blob() {
 }
 
 blob_exists() {
-	# A definite not-found is a miss; anything else that fails is an error, so a
-	# throttled or unauthorised probe never masquerades as an empty cache.
-	local out
-	if out=$(az_blob show --name "$blob" -o none 2>&1); then
-		return 0
-	fi
-	if grep -qiE 'BlobNotFound|not found|404' <<<"$out"; then
-		return 1
-	fi
-	echo "::error::Could not query $container/$blob: $out" >&2
+	# `az storage blob exists` answers existence in its value, and it answers
+	# False for a missing container too, so this does not parse English error
+	# text. Anything other than a clean True/False -- a credential or network
+	# failure prints an ERROR line and still exits 0 -- is an error, never a
+	# miss: a silent miss costs a full 30-60 minute LLVM rebuild.
+	local out rc
+	out=$(az_blob exists --name "$blob" -o tsv 2>&1)
+	rc=$?
+	case "$out" in
+	True) return 0 ;;
+	False) return 1 ;;
+	esac
+	echo "::error::Could not query $container/$blob (exit $rc): $out" >&2
 	return 2
 }
 

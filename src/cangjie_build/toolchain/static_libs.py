@@ -12,6 +12,10 @@ _log = get_logger("cangjie_build.toolchain.static_libs")
 NCURSES_VERSION = "6.5"
 NCURSES_URL = f"https://ftp.gnu.org/pub/gnu/ncurses/ncurses-{NCURSES_VERSION}.tar.gz"
 LIBEDIT_TARBALL = "libedit-20210910-3.1"
+
+# Bump when the configure flags or CFLAGS below change; the tarball versions
+# alone do not capture how they are built.
+RECIPE_VERSION = "1"
 LIBEDIT_URL = f"https://thrysoee.dk/editline/{LIBEDIT_TARBALL}.tar.gz"
 
 

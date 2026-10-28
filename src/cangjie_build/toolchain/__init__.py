@@ -17,8 +17,10 @@ def toolchain_cache_key(target: str) -> str:
         return (
             f"mingw-{mingw.LLVM_MINGW_TAG}"
             f"-llvm{mingw.LLVM_PROJECT_COMMIT[:12]}"
+            f"-mingw{mingw.MINGW_W64_COMMIT[:12]}"
             f"-openssl{mingw.OPENSSL_VERSION}"
             f"-{mingw.TARGET_TRIPLE}"
+            f"-r{mingw.RECIPE_VERSION}"
         )
     if target == "linux-x64":
         from cangjie_build.toolchain import static_libs
@@ -26,6 +28,7 @@ def toolchain_cache_key(target: str) -> str:
         return (
             f"staticlibs-ncurses{static_libs.NCURSES_VERSION}"
             f"-{static_libs.LIBEDIT_TARBALL}"
-            "-x86_64-linux-gnu"
+            f"-x86_64-linux-gnu"
+            f"-r{static_libs.RECIPE_VERSION}"
         )
     raise ConfigError(f"no toolchain is built for target {target!r}")

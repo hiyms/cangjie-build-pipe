@@ -93,8 +93,10 @@ def test_toolchain_blob_script_is_prefixed_and_wired() -> None:
     """The toolchain cache lives in blob storage, not actions/cache."""
     body = _read(".github/scripts/toolchain-blob.sh")
     assert "CANGJIE_CACHE_CONNECTION_STRING" in body
-    # A broken probe must not look like an empty cache.
-    assert "BlobNotFound" in body
+    # Existence comes from the subcommand's own True/False answer; a broken probe
+    # must not be parsed as an absence.
+    assert "az_blob exists" in body
+    assert "grep -qiE 'BlobNotFound" not in body
     for workflow in (".github/workflows/build-cangjie-azure.yml",):
         text = _read(workflow)
         assert "toolchain-blob.sh restore" in text

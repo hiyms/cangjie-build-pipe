@@ -516,3 +516,22 @@ def test_toolchain_key_rejects_an_unknown_target() -> None:
 
     with pytest.raises(ConfigError, match="no toolchain is built"):
         toolchain_cache_key("macos-arm64")
+
+
+def test_toolchain_key_covers_the_mingw_w64_commit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """mingw-w64 was cloned at branch HEAD, so its commit must be pinned and keyed."""
+    from cangjie_build.toolchain import mingw, toolchain_cache_key
+
+    before = toolchain_cache_key("windows-x64")
+    monkeypatch.setattr(mingw, "MINGW_W64_COMMIT", "a" * 40)
+    after = toolchain_cache_key("windows-x64")
+    assert before != after
+    assert "mingwaaaaaaaaaaaa" in after
+
+
+def test_mingw_w64_is_pinned_rather_than_tracking_a_branch() -> None:
+    from cangjie_build.toolchain import mingw
+
+    # A branch clone would make the artifact depend on upstream's current HEAD.
+    assert len(mingw.MINGW_W64_COMMIT) == 40
+    assert all(c in "0123456789abcdef" for c in mingw.MINGW_W64_COMMIT)
