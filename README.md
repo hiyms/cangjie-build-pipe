@@ -89,6 +89,27 @@ lld，cangjie 自带的 clang 在 cjc emit 时也用 lld。
 `.github/workflows/reap-orphans.yml` 是 Azure/GCP 的安全网：定时清理被取消
 或异常中断的 `cangjie-*` Azure resource group 和 GCP runner VM。
 
+### 缓存与凭据
+
+sccache 和交叉编译工具链都放在 Azure Blob 容器里，不用 GitHub Actions cache：
+后者对单个仓库有 10 GB 上限，重活下还会对写入限流（sccache 当初就是因为这个
+换掉的）。工具链是一棵约 2 GB 的树，只随 LLVM/openssl 的固定版本变化，适合当成
+普通 blob 对象。两个云平台共用同一个 blob，先构建的那边会为另一边预热。
+
+| secret | 用途 |
+| --- | --- |
+| `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` / `AZURE_SUBSCRIPTION_ID` | OIDC 登录，无静态密码 |
+| `CANGJIE_CACHE_CONNECTION_STRING` | 工具链 blob |
+| `SCCACHE_AZURE_CONNECTION_STRING` | sccache blob |
+| `RUNNER_REGISTRATION_PAT` | 生成 JIT runner 配置，需要仓库的 Administration: Write |
+
+OIDC 需要 app registration 上的 federated credential 指向本仓库，subject 用
+`repo:<owner>/<repo>:ref:refs/heads/master`（本仓库默认分支是 `master`）。
+没有这条信任时 `azure/login` 会失败，而报错信息并不指向原因。
+
+`RUNNER_REGISTRATION_PAT` 不能用 `GITHUB_TOKEN` 替代：JIT runner 注册要
+`Administration: Write`，而 `GITHUB_TOKEN` 拿不到这个 scope。
+
 > 这些工作流尚未实际派发过。本地验证覆盖的是命令语义：参数拼接、路径解析、归档
 > 解包、真实浅克隆、结果判定、分档计数。Azure 上的 provision、artifact 下载、
 > VM 上的 runner 注册要等第一次启用才能确认。

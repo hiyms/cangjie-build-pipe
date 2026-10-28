@@ -80,3 +80,36 @@ def test_azure_workflows_run_eviction_check_before_teardown() -> None:
         assert "azure-eviction-check.sh" in body
         # The activity-log read only works while the resource group still exists.
         assert body.index("azure-eviction-check.sh") < body.index("azure-teardown.sh")
+
+
+def test_toolchain_blob_script_is_prefixed_and_wired() -> None:
+    """The toolchain cache lives in blob storage, not actions/cache."""
+    body = _read(".github/scripts/toolchain-blob.sh")
+    assert "CANGJIE_CACHE_CONNECTION_STRING" in body
+    # A broken probe must not look like an empty cache.
+    assert "BlobNotFound" in body
+    for workflow in (
+        ".github/workflows/build-cangjie-azure.yml",
+        ".github/workflows/build-cangjie-gcp.yml",
+    ):
+        text = _read(workflow)
+        assert "toolchain-blob.sh restore" in text
+        assert "toolchain-blob.sh save" in text
+        assert "CANGJIE_CACHE_CONNECTION_STRING" in text
+        # The toolchain must not still be on the cache API with its 10 GB cap.
+        assert "actions/cache/restore" not in text
+        assert "actions/cache/save" not in text
+
+
+def test_azure_workflows_use_oidc_not_a_static_password() -> None:
+    for workflow in (
+        ".github/workflows/build-cangjie-azure.yml",
+        ".github/workflows/test-cangjie-azure.yml",
+    ):
+        text = _read(workflow)
+        assert "azure/login@" in text
+        assert "client-id: ${{ secrets.AZURE_CLIENT_ID }}" in text
+        assert "tenant-id: ${{ secrets.AZURE_TENANT_ID }}" in text
+        assert "subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}" in text
+        # A client secret in the workflow would defeat the federated credential.
+        assert "AZURE_CLIENT_SECRET" not in text

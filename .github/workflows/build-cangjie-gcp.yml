@@ -61,6 +61,10 @@ on:
         description: "Runner boot disk size in GB."
         required: true
         default: "256"
+      cache_container:
+        description: "Blob container holding the prebuilt cross toolchain."
+        required: true
+        default: "toolchain"
       sccache_gcs_bucket:
         description: "GCS bucket used by sccache."
         required: true
@@ -69,7 +73,6 @@ on:
 permissions:
   id-token: write
   contents: read
-  actions: write    # required by actions/cache/save for the toolchain cache
 
 defaults:
   run:
@@ -200,26 +203,39 @@ jobs:
         id: tc-key
         run: |
           set -euo pipefail
-          echo "key=$(.github/scripts/toolchain-cache-key.sh windows-x64)" >> "$GITHUB_OUTPUT"
-          echo "path=${{ env.CANGJIE_BUILD_ROOT }}/llvm-mingw-w64" >> "$GITHUB_OUTPUT"
+          key=$(.github/scripts/toolchain-cache-key.sh windows-x64)
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+          echo "blob=$key.tar.gz" >> "$GITHUB_OUTPUT"
 
-      - name: Restore toolchain cache
+      # Same blob as the Azure workflow: the toolchain only depends on its
+      # pinned LLVM/openSSL versions, so whichever cloud builds it first seeds
+      # the cache for the other.
+      - name: Restore toolchain from blob
         id: tc-cache
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: ${{ steps.tc-key.outputs.path }}
-          key: ${{ steps.tc-key.outputs.key }}
+        env:
+          CANGJIE_CACHE_CONNECTION_STRING: ${{ secrets.CANGJIE_CACHE_CONNECTION_STRING }}
+        run: |
+          set -euo pipefail
+          .github/scripts/toolchain-blob.sh restore \
+            "${{ inputs.cache_container }}" "${{ steps.tc-key.outputs.blob }}" \
+            "${{ env.CANGJIE_BUILD_ROOT }}" \
+            | tee /tmp/tc-restore.out
+          grep -q '^hit=true$' /tmp/tc-restore.out && echo "cache-hit=true" >> "$GITHUB_OUTPUT" || echo "cache-hit=false" >> "$GITHUB_OUTPUT"
 
       - name: Build MinGW toolchain
         if: steps.tc-cache.outputs.cache-hit != 'true'
         run: uv run cangjie-build --target windows-x64 install-mingw
 
-      - name: Save toolchain cache
+      - name: Save toolchain to blob
         if: always() && steps.tc-cache.outputs.cache-hit != 'true' && hashFiles(format('{0}/llvm-mingw-w64/bin/x86_64-w64-mingw32-clang', env.CANGJIE_BUILD_ROOT)) != ''
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: ${{ steps.tc-key.outputs.path }}
-          key: ${{ steps.tc-key.outputs.key }}
+        env:
+          CANGJIE_CACHE_CONNECTION_STRING: ${{ secrets.CANGJIE_CACHE_CONNECTION_STRING }}
+        run: |
+          # save() archives the basename of this path, so the tar's top entry is
+          # llvm-mingw-w64/ and restore() unpacks it under CANGJIE_BUILD_ROOT.
+          .github/scripts/toolchain-blob.sh save \
+            "${{ inputs.cache_container }}" "${{ steps.tc-key.outputs.blob }}" \
+            "${{ env.CANGJIE_BUILD_ROOT }}/llvm-mingw-w64"
 
       - name: Resolve effective Cangjie version
         id: cjver
