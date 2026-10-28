@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import shutil
+
 from cangjie_build.config import BuildConfig, RepoName
 from cangjie_build.logging_setup import stage
 from cangjie_build.runner import CommandPart
@@ -26,6 +28,23 @@ _TOOL_PATHS: tuple[tuple[str, str], ...] = (
 # the *absence* of /opt/buildtools/llvm-mingw-w64 as the "patched" signal —
 # that string only appears in the cross-windows branch and is gone after
 # we substitute.
+# cangjie-language-server hands cmake its own command line and never sets a
+# compiler launcher, so its C++ objects are the one part of the SDK that sccache
+# cannot see. CMake only accepts CMAKE_*_COMPILER_LAUNCHER as a cache variable:
+# exporting it through the environment, which is what maybe_enable() does for the
+# cmake-driven subprojects, has no effect here.
+_LSP_LAUNCHER_MARKER = "-DCMAKE_C_COMPILER_LAUNCHER="
+_LSP_LAUNCHER_EDITS: tuple[tuple[str, str], ...] = (
+    (
+        '        "-DCMAKE_BUILD_TYPE=" + BUILD_TYPE_MAP[args.build_type]\n    ]',
+        '        "-DCMAKE_BUILD_TYPE=" + BUILD_TYPE_MAP[args.build_type],\n'
+        "        # sccache, when the wrapper is on PATH.\n"
+        '        "-DCMAKE_C_COMPILER_LAUNCHER=sccache",\n'
+        '        "-DCMAKE_CXX_COMPILER_LAUNCHER=sccache",\n'
+        "    ]",
+    ),
+)
+
 _CJPM_NEEDLE = "/opt/buildtools/llvm-mingw-w64"
 _CJPM_EDITS: tuple[tuple[str, str], ...] = (
     (
@@ -35,7 +54,7 @@ _CJPM_EDITS: tuple[tuple[str, str], ...] = (
 )
 
 
-def _tool_build_type(cfg: BuildConfig) -> str:
+def tool_build_type(cfg: BuildConfig) -> str:
     """Build type to use for the tools, which only accept debug or release.
 
     RelWithDebInfo is not among build.py's choices in cangjie_tools, so it has to
@@ -48,13 +67,25 @@ def _tool_build_type(cfg: BuildConfig) -> str:
 def _build_args_for(name: str, cfg: BuildConfig) -> list[CommandPart]:
     if cfg.target.spec.cross_compile:
         return ["build", "-t", cfg.cross_build_type, "--target", "windows-x86_64"]
-    args: list[CommandPart] = ["build", "-t", _tool_build_type(cfg)]
+    args: list[CommandPart] = ["build", "-t", tool_build_type(cfg)]
     if name == "cjpm":
         # The runtime was built with cfg.build_type, so its lib directory carries
         # that name even though the tool itself is built as release/debug.
         rpath = f"$ORIGIN/../../runtime/lib/{cfg.target.runtime_lib_subdir(cfg.build_type)}"
         args += ["--set-rpath", rpath]
     return args
+
+
+def patch_lsp_launcher(cfg: BuildConfig) -> None:
+    """Make the language server's cmake invocations use sccache."""
+    if not shutil.which("sccache"):
+        return
+    apply_text_patch(
+        cfg.repo_path(RepoName.TOOLS) / "cangjie-language-server" / "build" / "build.py",
+        _LSP_LAUNCHER_EDITS,
+        stage="tools.lsp.patch",
+        marker=_LSP_LAUNCHER_MARKER,
+    )
 
 
 def run(cfg: BuildConfig) -> None:
@@ -68,6 +99,7 @@ def run(cfg: BuildConfig) -> None:
                 _CJPM_EDITS,
                 stage="tools.cjpm.patch",
             )
+        patch_lsp_launcher(cfg)
         for name, subpath in _TOOL_PATHS:
             cwd = tools_root / subpath
             run_build_py(cfg, cwd, ["clean"], stage_name=f"tools.{name}.clean")

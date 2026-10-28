@@ -546,17 +546,53 @@ def test_system_deps_include_the_python_headers_lldb_needs() -> None:
     assert "swig" in system_deps.APT_PACKAGES
 
 
-def test_tools_fold_relwithdebinfo_onto_an_accepted_build_type() -> None:
+def test_tools_fold_relwithdebinfo_onto_an_accepted_build_type(tmp_path: Path) -> None:
     """cangjie_tools' build.py accepts only debug and release."""
+    from cangjie_build.config import build_config
     from cangjie_build.stages import tools
-
-    class _Cfg:
-        def __init__(self, build_type: str) -> None:
-            self.build_type = build_type
 
     for requested, expected in (
         ("relwithdebinfo", "release"),
         ("release", "release"),
         ("debug", "debug"),
     ):
-        assert tools._tool_build_type(_Cfg(requested)) == expected  # type: ignore[arg-type]
+        cfg = build_config(
+            workspace=tmp_path / "ws",
+            build_root=tmp_path / "bt",
+            build_type=requested,
+        )
+        assert tools.tool_build_type(cfg) == expected
+
+
+def test_lsp_is_patched_to_use_sccache_as_its_cmake_launcher(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """lsp's build.py sets no launcher, and CMake ignores the env var."""
+    from cangjie_build.config import RepoName, build_config
+    from cangjie_build.stages import tools
+
+    cfg = build_config(workspace=tmp_path / "ws", build_root=tmp_path / "bt")
+    build_py = cfg.repo_path(RepoName.TOOLS) / "cangjie-language-server" / "build" / "build.py"
+    build_py.parent.mkdir(parents=True)
+    build_py.write_text(
+        "    result = [\n"
+        '        "cmake", HOME_DIR,\n'
+        '        "-G", get_generator(),\n'
+        '        "-DCOMPILER_TYPE=" + get_compiler_type(),\n'
+        '        "-DCMAKE_BUILD_TYPE=" + BUILD_TYPE_MAP[args.build_type]\n'
+        "    ]\n"
+    )
+
+    # The patch is skipped when sccache is absent, so stand it in.
+    def fake_which(name: str) -> str:
+        return "/usr/bin/sccache"
+
+    monkeypatch.setattr(tools.shutil, "which", fake_which)
+    tools.patch_lsp_launcher(cfg)
+    patched = build_py.read_text()
+    assert "-DCMAKE_C_COMPILER_LAUNCHER=sccache" in patched
+    assert "-DCMAKE_CXX_COMPILER_LAUNCHER=sccache" in patched
+
+    # Second call is a no-op, not a double insertion.
+    tools.patch_lsp_launcher(cfg)
+    assert build_py.read_text().count("-DCMAKE_C_COMPILER_LAUNCHER=sccache") == 1
