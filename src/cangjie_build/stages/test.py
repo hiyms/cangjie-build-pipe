@@ -47,7 +47,7 @@ _SUITE_CONFIG: dict[str, tuple[str, str]] = {
 }
 
 
-def _checkout(url: str, dest: Path, *, tag: str | None, stage_name: str) -> Path:
+def checkout_repo(url: str, dest: Path, *, tag: str | None, stage_name: str) -> Path:
     """Shallow-clone ``url`` into ``dest`` unless a real checkout is already there.
 
     The test repositories are only needed on the machine that runs the tests,
@@ -584,6 +584,7 @@ def run(
     test_repo: str = DEFAULT_TEST_REPO,
     framework_repo: str = DEFAULT_FRAMEWORK_REPO,
     test_tag: str | None = None,
+    framework_tag: str | None = None,
     tests: list[str] | None = None,
     test_list: Path | None = None,
     cases: list[Path] | None = None,
@@ -610,13 +611,17 @@ def run(
     cases = list(cases or [])
     with stage("test"):
         checkout_root = cfg.workspace / "cangjie_test_checkouts"
-        repo = _checkout(
+        repo = checkout_repo(
             test_repo, checkout_root / "cangjie_test", tag=test_tag, stage_name="test.repo"
         )
-        framework = _checkout(
+        # The two repositories have unrelated histories, so a revision named for
+        # one does not exist in the other. Reusing test_tag here is what made a
+        # commit from cangjie_test fail the framework fetch; without an explicit
+        # framework_tag the framework simply follows its own default branch.
+        framework = checkout_repo(
             framework_repo,
             checkout_root / "cangjie_test_framework",
-            tag=test_tag,
+            tag=framework_tag,
             stage_name="test.framework",
         )
         work_root = ensure_dir(cfg.workspace / "test-results")
@@ -750,7 +755,7 @@ def checkout_test_repo(
     cfg: BuildConfig, *, test_repo: str, test_tag: str | None, stage_name: str
 ) -> Path:
     """Clone (or reuse) just the cangjie_test checkout, without an SDK or suite run."""
-    return _checkout(
+    return checkout_repo(
         test_repo,
         cfg.workspace / "cangjie_test_checkouts" / "cangjie_test",
         tag=test_tag,

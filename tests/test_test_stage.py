@@ -232,7 +232,7 @@ def test_sdk_env_requires_the_runtime_lib_dir(tmp_path: Path) -> None:
         sdk_env(cfg)
 
 
-def test_run_mapple_anchors_relative_case_paths_on_the_checkout(
+def test_run_mapple_anchors_relative_case_paths_on_thecheckout_repo(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Maple runs with cwd=framework, so relative paths must be made absolute."""
@@ -613,8 +613,35 @@ def test_test_checkout_routes_through_shallow_clone(
 
     monkeypatch.setattr(test_stage, "shallow_clone", fake_clone)
     sha = "93a747bf98d9a2ded2a266a904a5494dd4e491e7"
-    dest = test_stage._checkout(
+    dest = test_stage.checkout_repo(
         "https://example.invalid/t.git", tmp_path / "t", tag=sha, stage_name="t"
     )
     assert seen == [("https://example.invalid/t.git", tmp_path / "t", sha)]
     assert dest == tmp_path / "t"
+
+
+def test_framework_tag_does_not_inherit_the_test_repository_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The two repositories have unrelated histories; a shared SHA cannot exist."""
+    from cangjie_build.stages import test as test_stage
+
+    seen: dict[str, str | None] = {}
+
+    def fake_clone(url: str, dest: Path, *, tag: str | None = None) -> None:
+        seen[dest.name] = tag
+        dest.mkdir(parents=True)
+        (dest / "x.cj").write_text("main() {}\n")
+
+    monkeypatch.setattr(test_stage, "shallow_clone", fake_clone)
+    sha = "93a747bf98d9a2ded2a266a904a5494dd4e491e7"
+    root = tmp_path / "checkouts"
+    test_stage.checkout_repo(
+        "https://example.invalid/t.git", root / "cangjie_test", tag=sha, stage_name="t"
+    )
+    # No framework_tag means the framework follows its own default branch.
+    test_stage.checkout_repo(
+        "https://example.invalid/f.git", root / "cangjie_test_framework", tag=None, stage_name="f"
+    )
+    assert seen["cangjie_test"] == sha
+    assert seen["cangjie_test_framework"] is None

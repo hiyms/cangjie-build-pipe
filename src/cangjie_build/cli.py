@@ -408,7 +408,14 @@ def cmd_test(
     ] = "https://github.com/CangjieLanguage/cangjie_test_framework.git",
     test_tag: Annotated[
         str | None,
-        typer.Option("--test-tag", help="Branch/tag for both test repositories."),
+        typer.Option("--test-tag", help="Branch/tag/commit for cangjie_test."),
+    ] = None,
+    framework_tag: Annotated[
+        str | None,
+        typer.Option(
+            "--framework-tag",
+            help="Branch/tag/commit for cangjie_test_framework. Default: its own default branch.",
+        ),
     ] = None,
     tests: Annotated[
         list[str] | None,
@@ -490,6 +497,7 @@ def cmd_test(
         test_repo=test_repo,
         framework_repo=framework_repo,
         test_tag=test_tag or None,
+        framework_tag=framework_tag or None,
         tests=tests or [],
         test_list=test_list,
         cases=selected,

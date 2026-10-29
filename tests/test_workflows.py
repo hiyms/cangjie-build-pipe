@@ -212,3 +212,14 @@ def test_test_workflow_installs_uv_before_it_is_used() -> None:
     # And the step really is the first place uv appears.
     first_uv_use = re.search(r"^\s+(uv |uv$)", provision, re.MULTILINE)
     assert first_uv_use is not None and first_uv_use.start() > setup
+
+
+def test_test_workflow_keeps_the_two_repository_tags_separate() -> None:
+    body = _read(".github/workflows/test-cangjie-azure.yml")
+    assert "      framework_tag:\n" in body
+    assert 'description: "Branch, tag or commit SHA for cangjie_test."' in body
+    assert body.count("--framework-tag") == 1
+    # plan-tests never clones the framework, so it must not take the flag.
+    sizing = body.split("Resolve VM size from the case count", 1)[1]
+    sizing = sizing.split("- name:", 1)[0]
+    assert "--framework-tag" not in sizing

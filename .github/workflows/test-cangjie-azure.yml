@@ -37,9 +37,13 @@ on:
         required: false
         default: ""
       test_tag:
-        description: "Branch, tag or commit SHA for cangjie_test and cangjie_test_framework."
+        description: "Branch, tag or commit SHA for cangjie_test."
         required: false
         default: "dev"
+      framework_tag:
+        description: "Branch, tag or commit SHA for cangjie_test_framework. Empty = its default branch."
+        required: false
+        default: ""
       suites:
         description: "Space-separated suites to run."
         required: true
@@ -352,6 +356,7 @@ jobs:
           BASE_TIMEOUT: ${{ inputs.base_timeout }}
           TEST_TAG: ${{ inputs.test_tag }}
           TEST_REPO: ${{ inputs.test_repo }}
+          FRAMEWORK_TAG: ${{ inputs.framework_tag }}
           ARCHIVE_FLAGS: ${{ steps.archives.outputs.flags }}
         run: |
           set -euo pipefail
@@ -370,6 +375,7 @@ jobs:
           if [[ -n "$CHANGED_IN" ]]; then args+=("--changed-in" "$CHANGED_IN"); fi
           if [[ -n "$TEST_REPO" ]]; then args+=("--test-repo" "$TEST_REPO"); fi
           if [[ -n "$TEST_TAG" ]]; then args+=("--test-tag" "$TEST_TAG"); fi
+          if [[ -n "$FRAMEWORK_TAG" ]]; then args+=("--framework-tag" "$FRAMEWORK_TAG"); fi
           # ARCHIVE_FLAGS holds one flag/value pair per line. mapfile on an
           # empty here-string yields a single empty element, which would inject
           # a bare empty argument, so only expand it when it has content.
