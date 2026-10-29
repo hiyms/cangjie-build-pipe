@@ -62,6 +62,7 @@ az group create -n "$RG" -l "$home_region" --tags "createdAt=$created_at" -o non
 # From here on the group exists. Any exit that is not a successful allocation
 # must remove it, or the group is orphaned until the hourly reaper notices.
 vm_allocated=0
+# shellcheck disable=SC2329  # invoked indirectly, by the trap two lines below
 cleanup_group() {
 	local rc=$?
 	if ((rc != 0)) && ((vm_allocated == 0)); then
