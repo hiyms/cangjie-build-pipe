@@ -252,3 +252,24 @@ def test_os_disk_defaults_to_the_cheap_tier_and_an_explicit_size() -> None:
 
     test = _read(".github/workflows/test-cangjie-azure.yml")
     assert "OS_DISK_SKU: StandardSSD_LRS" in test
+
+
+def test_pre_commit_hook_runs_the_same_checks_as_the_lint_job() -> None:
+    """A hook that checks less than CI reports success for what it never ran."""
+    hook = ROOT / ".githooks/pre-commit"
+    assert hook.is_file()
+    assert hook.stat().st_mode & 0o111, "hook is not executable"
+
+    body = hook.read_text()
+    ci = _read(".github/workflows/build-cangjie.yml")
+    for command in (
+        "uv run ruff check .",
+        "uv run ruff format --check .",
+        "shellcheck .github/scripts/*.sh",
+        "shfmt -d .github/scripts",
+        "uv run ty check",
+        "uv run pyright",
+        "uv run pytest",
+    ):
+        assert command in ci, f"CI no longer runs: {command}"
+        assert command in body, f"hook does not run: {command}"

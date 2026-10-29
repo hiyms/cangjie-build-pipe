@@ -315,7 +315,17 @@ shellcheck .github/scripts/*.sh
 shfmt -d .github/scripts
 ```
 
-`build-cangjie.yml` 的 lint job 跑同样的检查。Python 锁在
+`build-cangjie.yml` 的 lint job 跑同样的检查。这些检查也可以挂到 git hook 上：
+
+```bash
+git config core.hooksPath .githooks
+```
+
+之后每次 `git commit` 都会依次跑上面这些命令。`shellcheck` 和 `shfmt` 不是项目
+依赖，CI 单独安装；本机缺了它们，hook 会明确报缺失并让提交失败，不会静默跳过，
+否则 hook 报的“通过”和 CI 的结果不是一回事。
+
+Python 锁在
 `>=3.11,<3.13`：cangjie 的 lldb 15 还在用 `PyEval_ThreadsInitialized`，
 3.13 里被移除会编译失败。
 

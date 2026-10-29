@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# Pre-commit checks, mirroring the lint job in .github/workflows/build-cangjie.yml.
+#
+# Enabled by `git config core.hooksPath .githooks` (see the README). Running the
+# same commands locally means a push does not discover a formatting or type
+# error only after CI has spun up.
+#
+# A missing tool is reported and fails the commit rather than being skipped: a
+# hook that silently checks less than CI is worse than no hook, because it
+# reports success for something it never ran.
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+failed=0
+report() {
+	echo "  FAILED: $*" >&2
+	failed=1
+}
+
+run() {
+	local label=$1
+	shift
+	if ! "$@" 2>&1; then
+		report "$label"
+	fi
+}
+
+echo "==> ruff check"
+run "ruff check" uv run ruff check .
+
+echo "==> ruff format --check"
+run "ruff format" uv run ruff format --check .
+
+# shellcheck and shfmt are not project dependencies; CI installs them
+# separately. Only shell scripts that exist should be linted, and a missing
+# tool must be visible.
+for tool in shellcheck shfmt; do
+	if command -v "$tool" >/dev/null 2>&1; then
+		continue
+	fi
+	echo "$tool not found; install it to get the same checks as CI" >&2
+	failed=1
+done
+
+if command -v shellcheck >/dev/null 2>&1; then
+	echo "==> shellcheck"
+	run "shellcheck" shellcheck .github/scripts/*.sh
+fi
+
+if command -v shfmt >/dev/null 2>&1; then
+	echo "==> shfmt -d"
+	run "shfmt" shfmt -d .github/scripts
+fi
+
+echo "==> ty"
+run "ty" uv run ty check
+
+echo "==> pyright"
+run "pyright" uv run pyright
+
+echo "==> pytest"
+run "pytest" uv run pytest -q
+
+if ((failed)); then
+	echo "" >&2
+	echo "Pre-commit checks failed. Fix the items above before committing." >&2
+	exit 1
+fi
+
+echo ""
+echo "All pre-commit checks passed."
