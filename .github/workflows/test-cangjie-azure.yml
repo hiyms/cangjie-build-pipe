@@ -116,7 +116,7 @@ jobs:
       case_count: ${{ steps.size.outputs.cases }}
       jobs: ${{ steps.size.outputs.jobs }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@v4
 
       # Validate the inputs before paying for a VM: both SDK inputs are
       # optional, and without this an operator who supplies neither only finds
@@ -156,7 +156,7 @@ jobs:
             esac
           done
 
-      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+      - uses: astral-sh/setup-uv@v10.3.3
         with:
           enable-cache: false
 
@@ -220,7 +220,7 @@ jobs:
           echo "Resolved ${count} case(s) -> $size, -j$jobs."
 
 
-      - uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
+      - uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -291,9 +291,9 @@ jobs:
       CANGJIE_WORKSPACE: ${{ github.workspace }}/workspace
       CANGJIE_BUILD_ROOT: ${{ github.workspace }}/buildtools
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@v4
 
-      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+      - uses: astral-sh/setup-uv@v10.3.3
         with:
           enable-cache: false
 
@@ -307,7 +307,7 @@ jobs:
 
       - name: Fetch SDK artifact
         if: inputs.sdk_artifact != ''
-        uses: actions/download-artifact@d3f86a106a0ced5a84aa2dfb26f5b024e2c15d5b # v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.sdk_artifact }}
           path: ${{ env.CANGJIE_WORKSPACE }}/artifacts
@@ -426,7 +426,7 @@ jobs:
 
       - name: Upload test reports
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: cangjie-test-reports-${{ github.run_id }}
           path: ${{ env.CANGJIE_WORKSPACE }}/test-reports/**
@@ -438,9 +438,9 @@ jobs:
     if: always()
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@v4
 
-      - uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
+      - uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}

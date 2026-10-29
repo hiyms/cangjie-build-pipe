@@ -223,3 +223,15 @@ def test_test_workflow_keeps_the_two_repository_tags_separate() -> None:
     sizing = body.split("Resolve VM size from the case count", 1)[1]
     sizing = sizing.split("- name:", 1)[0]
     assert "--framework-tag" not in sizing
+
+
+def test_workflows_reference_actions_by_tag_not_by_sha() -> None:
+    """A wrong SHA fails at resolve time, before any step runs."""
+    import re
+
+    uses = re.compile(r"uses: ([^\s@]+)@([^\s#]+)")
+    for path in sorted(ROOT.glob(".github/workflows/*.yml")):
+        for match in uses.finditer(path.read_text()):
+            ref = match.group(2)
+            assert not re.fullmatch(r"[0-9a-f]{40}", ref), f"{path.name}: pinned SHA {ref}"
+            assert ref.startswith("v"), f"{path.name}: {match.group(1)}@{ref} is not a tag"
