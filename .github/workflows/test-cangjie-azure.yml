@@ -254,9 +254,9 @@ jobs:
           SIZE: ${{ steps.size.outputs.size }}
           PRIORITY: ${{ inputs.vm_priority }}
           # The SDK archive, the test checkouts (1 GB) and the case work
-          # directory all live on the OS disk; 128 GB leaves room without
-          # paying for the build job's 256 GB.
+          # directory all live on the OS disk; 128 GB leaves room.
           OS_DISK_SIZE_GB: "128"
+          OS_DISK_SKU: StandardSSD_LRS
           CLOUD_INIT: cloud-init.yml
         run: .github/scripts/azure-provision-vm.sh | tee -a "$GITHUB_OUTPUT"
 

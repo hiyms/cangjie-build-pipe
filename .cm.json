@@ -1,0 +1,13 @@
+{
+  "type": "ActualCost",
+  "timeframe": "MonthToDate",
+  "dataset": {
+    "granularity": "None",
+    "aggregation": { "totalCost": { "name": "PreTaxCost", "function": "Sum" } },
+    "grouping": [
+      { "type": "Dimension", "name": "ServiceName" },
+      { "type": "Dimension", "name": "Meter" },
+      { "type": "Dimension", "name": "ResourceId" }
+    ]
+  }
+}

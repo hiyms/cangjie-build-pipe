@@ -29,10 +29,14 @@ set -euo pipefail
 : "${PRIORITY:?PRIORITY required}"
 : "${CLOUD_INIT:?CLOUD_INIT path required}"
 ZONES=${ZONES:-"2 1 3"}
-# Disk size is a build-input: the LLVM + MinGW build needs 256 GB, while a job
-# that only runs test cases gets by with the default (~30 GB plus room for the
-# case work directory and the SDK archive).
-OS_DISK_SIZE_GB=${OS_DISK_SIZE_GB:-256}
+# Disk size is a build-input: the full linux SDK build (LLVM, lldb, stdlib,
+# tools) writes about 45 GB, so 128 GB leaves room, while a job that only runs
+# test cases gets by with far less.
+OS_DISK_SIZE_GB=${OS_DISK_SIZE_GB:-128}
+# Without this az defaults to Premium_LRS, which costs about four times as much
+# per hour for a workload that never saturates it: the build writes ~24 MB/s
+# while compiling, and the standard tier sustains 60 MB/s.
+OS_DISK_SKU=${OS_DISK_SKU:-StandardSSD_LRS}
 VM_NAME=${VM_NAME:-runner}
 
 # A typo here silently provisions a full-price VM, so reject it rather than
@@ -82,6 +86,7 @@ base_args=(
 	--custom-data "$CLOUD_INIT"
 	--os-disk-caching ReadOnly
 	--os-disk-size-gb "$OS_DISK_SIZE_GB"
+	--storage-sku "$OS_DISK_SKU"
 	# Spot eviction policy is Delete, so the OS disk has to go with the VM;
 	# leaving it behind would leak a managed disk per eviction.
 	--os-disk-delete-option Delete

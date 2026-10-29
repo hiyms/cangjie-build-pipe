@@ -235,3 +235,20 @@ def test_workflows_reference_actions_by_tag_not_by_sha() -> None:
             ref = match.group(2)
             assert not re.fullmatch(r"[0-9a-f]{40}", ref), f"{path.name}: pinned SHA {ref}"
             assert ref.startswith("v"), f"{path.name}: {match.group(1)}@{ref} is not a tag"
+
+
+def test_os_disk_defaults_to_the_cheap_tier_and_an_explicit_size() -> None:
+    """az defaults to Premium_LRS, which costs about four times more per hour."""
+    script = _read(".github/scripts/azure-provision-vm.sh")
+    assert "OS_DISK_SKU=${OS_DISK_SKU:-StandardSSD_LRS}" in script
+    assert "OS_DISK_SIZE_GB=${OS_DISK_SIZE_GB:-128}" in script
+    # Passing neither would let az pick a 30 GB Premium disk.
+    assert '--storage-sku "$OS_DISK_SKU"' in script
+    assert '--os-disk-size-gb "$OS_DISK_SIZE_GB"' in script
+
+    build = _read(".github/workflows/build-cangjie-azure.yml")
+    assert 'default: "StandardSSD_LRS"' in build
+    assert "OS_DISK_SKU: ${{ inputs.os_disk_sku }}" in build
+
+    test = _read(".github/workflows/test-cangjie-azure.yml")
+    assert "OS_DISK_SKU: StandardSSD_LRS" in test

@@ -77,6 +77,19 @@ on:
         description: "Blob container holding the prebuilt cross toolchain."
         required: true
         default: "toolchain"
+      os_disk_size_gb:
+        description: "OS disk size in GB. The full SDK build writes about 45 GB."
+        required: false
+        default: "128"
+      os_disk_sku:
+        description: "OS disk tier. The build peaks near 24 MB/s, well under the standard tier."
+        required: false
+        type: choice
+        options:
+          - StandardSSD_LRS
+          - Standard_LRS
+          - Premium_LRS
+        default: "StandardSSD_LRS"
       vm_priority:
         description: "Spot (cheap, evictable) or Regular. Spot falls back to Regular when no region has quota or capacity."
         required: true
@@ -146,6 +159,8 @@ jobs:
           REGIONS: ${{ inputs.vm_regions }}
           SIZE: ${{ inputs.vm_size }}
           PRIORITY: ${{ inputs.vm_priority }}
+          OS_DISK_SIZE_GB: ${{ inputs.os_disk_size_gb }}
+          OS_DISK_SKU: ${{ inputs.os_disk_sku }}
           CLOUD_INIT: cloud-init.yml
         run: .github/scripts/azure-provision-vm.sh | tee -a "$GITHUB_OUTPUT"
 

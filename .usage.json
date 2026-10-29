@@ -1,0 +1,416 @@
+[
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "fe167397-a38d-43c3-9bb3-8e2907e56a41",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/cangjie-ci-shared/providers/Microsoft.Storage/storageAccounts/cangjiecache20260101",
+    "svc": "Microsoft.Storage",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "8dc6cb64-53c0-5c58-bfa1-6a9685fd1bcb",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/CANGJIE-PROBE-SPOT/providers/Microsoft.Compute/virtualMachines/probe-spot",
+    "svc": "Microsoft.Compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "15a94a40-5d37-5df3-9e4b-8d1a15917a35",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/CANGJIE-40702512766-1/providers/Microsoft.Compute/virtualMachines/runner",
+    "svc": "Microsoft.Compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "ed45ae8d-a734-4d21-bc88-e5b54f9e903e",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/cangjie-ci-shared/providers/Microsoft.Storage/storageAccounts/cangjiecache20260101",
+    "svc": "Microsoft.Storage",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "15a94a40-5d37-5df3-9e4b-8d1a15917a35",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/CANGJIE-40721033668-1/providers/Microsoft.Compute/virtualMachines/runner",
+    "svc": "Microsoft.Compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "beb1457b-1ab8-4e38-8021-bf7e39b1014b",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourcegroups/cangjie-40712754553-1/providers/microsoft.compute/virtualmachines/runner",
+    "svc": "microsoft.compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "9995d93a-7d35-4d3f-9c69-7a7fea447ef4",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourcegroups/cangjie-40721033668-1/providers/microsoft.compute/virtualmachines/runner",
+    "svc": "microsoft.compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "dbefcfc1-e3f6-409b-be6d-9cd7b00724a5",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourcegroups/cangjie-40717533735-1/providers/microsoft.compute/virtualmachines/runner",
+    "svc": "microsoft.compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "40da92a4-a965-5dd4-86fc-c83c86df7c34",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/CANGJIE-40725832486-1/providers/Microsoft.Compute/virtualMachines/runner",
+    "svc": "Microsoft.Compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "3edf40c0-4da2-4e8e-8124-c845caeaf249",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/CANGJIE-40709565310-1/providers/Microsoft.Compute/disks/runner_OsDisk_1_c8c5bb156a1841caad8b2bedca674501",
+    "svc": "Microsoft.Compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "15a94a40-5d37-5df3-9e4b-8d1a15917a35",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/CANGJIE-40707626385-1/providers/Microsoft.Compute/virtualMachines/runner",
+    "svc": "Microsoft.Compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "3edf40c0-4da2-4e8e-8124-c845caeaf249",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/CANGJIE-40717533735-1/providers/Microsoft.Compute/disks/runner_OsDisk_1_09b75f3c590a499aad1f05a650640c04",
+    "svc": "Microsoft.Compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "8dc6cb64-53c0-5c58-bfa1-6a9685fd1bcb",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/CANGJIE-PROBE-EVICT/providers/Microsoft.Compute/virtualMachines/spot2",
+    "svc": "Microsoft.Compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "7910b1eb-292c-4462-92f8-d3c917924591",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/cangjie-ci-shared/providers/Microsoft.Storage/storageAccounts/cangjiecache20260101",
+    "svc": "Microsoft.Storage",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "e0f55998-2c88-4887-9de7-f26d9d4466f9",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/cangjie-ci-shared/providers/Microsoft.Storage/storageAccounts/cangjiecache20260101",
+    "svc": "Microsoft.Storage",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "3edf40c0-4da2-4e8e-8124-c845caeaf249",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/CANGJIE-40712754553-1/providers/Microsoft.Compute/disks/runner_OsDisk_1_3c7183666b6f48b1a32deb9570d11bac",
+    "svc": "Microsoft.Compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "3edf40c0-4da2-4e8e-8124-c845caeaf249",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/CANGJIE-40705754379-1/providers/Microsoft.Compute/disks/runner_OsDisk_1_f09d0cbecda047019bf72993bc5d5d98",
+    "svc": "Microsoft.Compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "beb1457b-1ab8-4e38-8021-bf7e39b1014b",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourcegroups/cangjie-40721033668-1/providers/microsoft.compute/virtualmachines/runner",
+    "svc": "microsoft.compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "9995d93a-7d35-4d3f-9c69-7a7fea447ef4",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourcegroups/cangjie-40725832486-1/providers/microsoft.compute/virtualmachines/runner",
+    "svc": "microsoft.compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "42bb05e1-6f42-4de1-a6ba-7ffb976cb560",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/cangjie-ci-shared/providers/Microsoft.Storage/storageAccounts/cangjiecache20260101",
+    "svc": "Microsoft.Storage",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "9995d93a-7d35-4d3f-9c69-7a7fea447ef4",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourcegroups/cangjie-40717533735-1/providers/microsoft.compute/virtualmachines/runner",
+    "svc": "microsoft.compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "15a94a40-5d37-5df3-9e4b-8d1a15917a35",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/CANGJIE-40712754553-1/providers/Microsoft.Compute/virtualMachines/runner",
+    "svc": "Microsoft.Compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "dbefcfc1-e3f6-409b-be6d-9cd7b00724a5",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourcegroups/cangjie-40712754553-1/providers/microsoft.compute/virtualmachines/runner",
+    "svc": "microsoft.compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "fe167397-a38d-43c3-9bb3-8e2907e56a41",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/cangjie-ci-shared/providers/Microsoft.Storage/storageAccounts/cangjiecache20260101",
+    "svc": "Microsoft.Storage",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "23e1ac7a-73e3-48fe-80d4-27e129d74e5d",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/cangjie-ci-shared/providers/Microsoft.Storage/storageAccounts/cangjiecache20260101",
+    "svc": "Microsoft.Storage",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "15a94a40-5d37-5df3-9e4b-8d1a15917a35",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/CANGJIE-40705754379-1/providers/Microsoft.Compute/virtualMachines/runner",
+    "svc": "Microsoft.Compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "beb1457b-1ab8-4e38-8021-bf7e39b1014b",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourcegroups/cangjie-40717533735-1/providers/microsoft.compute/virtualmachines/runner",
+    "svc": "microsoft.compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "ba45fb9a-98be-4d8e-a678-3017af52cff9",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/cangjie-ci-shared/providers/Microsoft.Storage/storageAccounts/cangjiecache20260101",
+    "svc": "Microsoft.Storage",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "e94bb43f-6853-53bb-a172-3055a74ae80d",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/CANGJIE-TEST-40730787233-1/providers/Microsoft.Compute/virtualMachines/runner",
+    "svc": "Microsoft.Compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "9995d93a-7d35-4d3f-9c69-7a7fea447ef4",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourcegroups/cangjie-40712754553-1/providers/microsoft.compute/virtualmachines/runner",
+    "svc": "microsoft.compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "beb1457b-1ab8-4e38-8021-bf7e39b1014b",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourcegroups/cangjie-40725832486-1/providers/microsoft.compute/virtualmachines/runner",
+    "svc": "microsoft.compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "fc203689-76e7-4fbe-86b9-968d73231c00",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/cangjie-ci-shared/providers/Microsoft.Storage/storageAccounts/cangjiecache20260101",
+    "svc": "Microsoft.Storage",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "3edf40c0-4da2-4e8e-8124-c845caeaf249",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/CANGJIE-40707626385-1/providers/Microsoft.Compute/disks/runner_OsDisk_1_912b1fa022e741bba0e23d64caa11af6",
+    "svc": "Microsoft.Compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "e0f55998-2c88-4887-9de7-f26d9d4466f9",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/cangjie-ci-shared/providers/Microsoft.Storage/storageAccounts/cangjiecache20260101",
+    "svc": "Microsoft.Storage",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "251460e0-ac68-4e30-9f8d-eb0e2d77b03f",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/CANGJIE-40725832486-1/providers/Microsoft.Compute/disks/runner_OsDisk_1_95c0be1c52bd4df2813bd15483193dcc",
+    "svc": "Microsoft.Compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "dbefcfc1-e3f6-409b-be6d-9cd7b00724a5",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourcegroups/cangjie-40725832486-1/providers/microsoft.compute/virtualmachines/runner",
+    "svc": "microsoft.compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "42bb05e1-6f42-4de1-a6ba-7ffb976cb560",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/cangjie-ci-shared/providers/Microsoft.Storage/storageAccounts/cangjiecache20260101",
+    "svc": "Microsoft.Storage",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "5d7fe7a4-ecb9-4228-8de8-43a5e332f55c",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/CANGJIE-PROBE-EVICT/providers/Microsoft.Compute/disks/spot2_OsDisk_1_8f8fadc8644745049beb8eda188dd677",
+    "svc": "Microsoft.Compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "5d7fe7a4-ecb9-4228-8de8-43a5e332f55c",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/CANGJIE-PROBE-SPOT/providers/Microsoft.Compute/disks/probe-spot_OsDisk_1_54c7dfc23ee84132abb08f08518120f6",
+    "svc": "Microsoft.Compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "15a94a40-5d37-5df3-9e4b-8d1a15917a35",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/CANGJIE-40717533735-1/providers/Microsoft.Compute/virtualMachines/runner",
+    "svc": "Microsoft.Compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "dbefcfc1-e3f6-409b-be6d-9cd7b00724a5",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourcegroups/cangjie-40721033668-1/providers/microsoft.compute/virtualmachines/runner",
+    "svc": "microsoft.compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "15a94a40-5d37-5df3-9e4b-8d1a15917a35",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/CANGJIE-40709565310-1/providers/Microsoft.Compute/virtualMachines/runner",
+    "svc": "Microsoft.Compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "3edf40c0-4da2-4e8e-8124-c845caeaf249",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/CANGJIE-40702512766-1/providers/Microsoft.Compute/disks/runner_OsDisk_1_57a407e14d934366b894dbb9830282fb",
+    "svc": "Microsoft.Compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "99f50f54-1802-4465-9a21-b80f328e4fad",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/cangjie-ci-shared/providers/Microsoft.Storage/storageAccounts/cangjiecache20260101",
+    "svc": "Microsoft.Storage",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "3edf40c0-4da2-4e8e-8124-c845caeaf249",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/CANGJIE-40721033668-1/providers/Microsoft.Compute/disks/runner_OsDisk_1_94de63b78a014d65b2639f76b62efc95",
+    "svc": "Microsoft.Compute",
+    "unit": null
+  },
+  {
+    "cost": "None",
+    "date": null,
+    "meter": "93a6a529-4f49-47cb-9b1e-db9e5f23263f",
+    "qty": "None",
+    "res": "/subscriptions/f569ea99-8486-48e7-8b13-1a6a64392e16/resourceGroups/CANGJIE-TEST-40730787233-1/providers/Microsoft.Compute/disks/runner_OsDisk_1_22b9a873a6304191988fd082cdd6edae",
+    "svc": "Microsoft.Compute",
+    "unit": null
+  }
+]
