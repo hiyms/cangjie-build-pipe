@@ -383,8 +383,36 @@ jobs:
           if [[ -n "$ARCHIVE_FLAGS" ]]; then
             mapfile -t archive_flags <<<"$ARCHIVE_FLAGS"
           fi
+          # A failing case is a test result, not a broken pipeline. Letting the
+          # step exit non-zero paints the run red at the job level, where it is
+          # indistinguishable from a provisioning or download failure. Record the
+          # status and decide in the next step, which also gets to write the
+          # summary first.
+          set +e
           uv run cangjie-build test "${args[@]}" \
             -j "$JOBS" --base-timeout "$BASE_TIMEOUT" "${archive_flags[@]}"
+          rc=$?
+          set -e
+          echo "status=$rc" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Report the test verdict
+        if: always() && steps.run-suites.outputs.status != ''
+        env:
+          STATUS: ${{ steps.run-suites.outputs.status }}
+        run: |
+          set -euo pipefail
+          if [[ "$STATUS" == "0" ]]; then
+            echo "All selected cases passed."
+            exit 0
+          fi
+          {
+            echo "### Test failures"
+            echo ""
+            echo "cangjie-build test exited $STATUS; per-case results are in the"
+            echo "artifacts and in the job summary of the step above."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error::Selected test cases failed (exit $STATUS). See the run summary and the uploaded reports."
 
       - name: Collect reports
         if: always()

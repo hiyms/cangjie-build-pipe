@@ -411,6 +411,24 @@ def read_mapple_totals(results: Path) -> dict[str, int]:
     return totals
 
 
+def totals_if_any(work: Path) -> dict[str, int] | None:
+    """Tallies from a suite that failed, when it managed to write them.
+
+    Maple writes its json output as it goes, so a run that failed still has the
+    counts of the cases it finished. The file is absent when the failure happened
+    before any case ran, and reading it must not turn that into a second error
+    that hides the first.
+    """
+    results = work / "results.json"
+    if not results.is_file():
+        return None
+    try:
+        totals = read_mapple_totals(results)
+    except (BuildError, OSError, json.JSONDecodeError):
+        return None
+    return totals or None
+
+
 def _git(*args: str, cwd: Path, stage: str, check: bool = True) -> tuple[int, str]:
     return run_capture(["git", *args], cwd=cwd, stage=stage, check=check)
 
@@ -745,17 +763,28 @@ def run(
                     f"with a selection spanning {sorted(plan)}. Use --case, or run "
                     "one suite at a time",
                 )
-            results = run_mapple(
-                cfg,
-                repo,
-                framework,
-                work_root / suite,
-                suite=suite,
-                test_list=test_list,
-                cases=suite_cases,
-                jobs=jobs,
-                base_timeout=base_timeout,
-            )
+            # A failing suite makes run_mapple raise, which would skip the
+            # summary entirely: the run that most needs a summary is the one that
+            # stopped early, and it still has the tallies of every suite that did
+            # run. Record them before propagating.
+            try:
+                results = run_mapple(
+                    cfg,
+                    repo,
+                    framework,
+                    work_root / suite,
+                    suite=suite,
+                    test_list=test_list,
+                    cases=suite_cases,
+                    jobs=jobs,
+                    base_timeout=base_timeout,
+                )
+            except BuildError:
+                totals = totals_if_any(work_root / suite)
+                if totals is not None:
+                    reports.append(summary.SuiteReport(suite, totals))
+                summary.write(reports)
+                raise
             totals = read_mapple_totals(results)
             reports.append(summary.SuiteReport(suite, totals))
             _log.info("%s results: %s (details in %s)", suite.upper(), totals, results)

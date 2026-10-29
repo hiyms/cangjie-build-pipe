@@ -323,3 +323,18 @@ def test_test_stage_writes_a_summary() -> None:
 
     reports = [summary.SuiteReport("llt", {"total": 3, "PASS": 3})]
     assert "| LLT | 3 | 3 | 0 |" in summary.render(reports)
+
+
+def test_a_failing_case_does_not_look_like_a_broken_pipeline() -> None:
+    """A red job is indistinguishable from a provisioning or download failure.
+
+    The suite step records its exit status and exits 0, so the verdict is decided
+    by a later step that can also write the summary first.
+    """
+    body = _read(".github/workflows/test-cangjie-azure.yml")
+    run_step = body.split("- name: Run suites", 1)[1].split("- name:", 1)[0]
+    assert "set +e" in run_step
+    assert 'echo "status=$rc" >> "$GITHUB_OUTPUT"' in run_step
+    assert "exit 0" in run_step
+    assert "Report the test verdict" in body
+    assert "steps.run-suites.outputs.status" in body

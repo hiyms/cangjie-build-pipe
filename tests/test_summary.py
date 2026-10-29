@@ -34,3 +34,24 @@ def test_write_appends_to_the_summary_file(tmp_path: Path, monkeypatch: pytest.M
     body = target.read_text()
     assert body.startswith("existing\n")
     assert "| LLT | 2 | 2 | 0 |" in body
+
+
+def test_totals_are_read_from_a_suite_that_failed(tmp_path: Path) -> None:
+    """Maple writes its json as it goes, so a failed suite still has counts."""
+    from cangjie_build.stages.test import totals_if_any
+
+    work = tmp_path / "llt"
+    work.mkdir()
+    (work / "results.json").write_text('[{"total": 3, "PASS": 1, "FAIL": 2}]', encoding="utf-8")
+    assert totals_if_any(work) == {"total": 3, "PASS": 1, "FAIL": 2}
+
+
+def test_missing_or_unreadable_results_yield_no_totals(tmp_path: Path) -> None:
+    from cangjie_build.stages.test import totals_if_any
+
+    work = tmp_path / "llt"
+    work.mkdir()
+    assert totals_if_any(work) is None
+
+    (work / "results.json").write_text("not json", encoding="utf-8")
+    assert totals_if_any(work) is None
