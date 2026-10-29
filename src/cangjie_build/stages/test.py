@@ -15,6 +15,7 @@ from cangjie_build.logging_setup import get_logger, stage
 from cangjie_build.runner import run as run_cmd
 from cangjie_build.runner import run_capture
 from cangjie_build.stages._common import (
+    apply_text_patch,
     ensure_dir,
     join_pathsep,
     python_exe,
@@ -35,6 +36,43 @@ Suite = Literal["conformance", "hlt", "llt"]
 # matrix of configs under linux_x64-linux_x64/, while LLT has one flat
 # cjnative_test.cfg that carries its own complete [internal-var] block. Each
 # suite therefore names its own file and its own test list.
+# Conditions the test cases expect but no .cfg declares. LLT wires 1191 assertions
+# behind "DEBUG_OPTION" (mostly "(CJNATIVE and DEBUG_OPTION) EXEC-PIPE: ...
+# | compare %f"), and the framework only makes such a name true when the caller
+# passes it on the command line: TaskConfig merges --condition into the set it
+# reads from [condition]. Without this, every one of those assertions is filtered
+# out before it can run, and the case passes on its compile step alone.
+SUITE_CONDITIONS: dict[str, tuple[str, ...]] = {
+    "llt": ("DEBUG_OPTION",),
+}
+
+# _form_line() substitutes %key placeholders one key at a time, in dictionary
+# order, and treats the character after the key as a boundary unless it is
+# alphanumeric or "_". A "-" therefore counts as a boundary, so %dump-ir matches
+# inside %dump-ir-to-screen and replaces it with "--dump-ir", leaving
+# "--dump-ir-to-screen" -- an option cjc-frontend rejects. Sorting the keys
+# longest-first makes the longer placeholder win before its prefix can.
+_FRAMEWORK_MARKER = "sorted(internal_var.items(), key=lambda kv: -len(kv[0]))"
+_FRAMEWORK_EDITS: tuple[tuple[str, str], ...] = (
+    (
+        "            for key, value in internal_var.items():\n",
+        "            # Longest key first: a shorter key must not consume the "
+        "prefix of a longer one.\n"
+        "            for key, value in sorted(internal_var.items(), key=lambda kv: -len(kv[0])):\n",
+    ),
+)
+
+
+def patch_framework(framework: Path) -> None:
+    """Make placeholder substitution pick the longest matching key first."""
+    apply_text_patch(
+        require_file(framework / "maple_test" / "task.py", stage="test.framework.patch"),
+        _FRAMEWORK_EDITS,
+        stage="test.framework.patch",
+        marker=_FRAMEWORK_MARKER,
+    )
+
+
 _SUITE_CONFIG: dict[str, tuple[str, str]] = {
     "hlt": (
         "configs/cjnative/linux_x64-linux_x64/basic.cfg",
@@ -302,6 +340,9 @@ def run_mapple(
         f"--timeout={base_timeout}",
         "--fail_exit",
     ]
+    conditions = SUITE_CONDITIONS.get(suite, ())
+    if conditions:
+        cmd.append("--condition=" + ",".join(conditions))
     if cases:
         resolved = [_resolve_under(repo, c, stage=f"test.{suite}.case") for c in cases]
         files = [c for c in resolved if c.is_file()]
@@ -624,6 +665,7 @@ def run(
             tag=framework_tag,
             stage_name="test.framework",
         )
+        patch_framework(framework)
         work_root = ensure_dir(cfg.workspace / "test-results")
 
         # Resolved after the checkout exists, so --changed-in always diffs the

@@ -645,3 +645,29 @@ def test_framework_tag_does_not_inherit_the_test_repository_commit(
     )
     assert seen["cangjie_test"] == sha
     assert seen["cangjie_test_framework"] is None
+
+
+def test_llt_is_told_the_condition_its_assertions_depend_on() -> None:
+    """1191 LLT assertions are gated behind DEBUG_OPTION, which no .cfg declares."""
+    from cangjie_build.stages import test as test_stage
+
+    assert "DEBUG_OPTION" in test_stage.SUITE_CONDITIONS["llt"]
+    # HLT has no such condition; inventing one there would change its selection.
+    assert "DEBUG_OPTION" not in test_stage.SUITE_CONDITIONS.get("hlt", ())
+
+
+def test_framework_patch_makes_the_longest_placeholder_win(tmp_path: Path) -> None:
+    """%dump-ir must not consume the prefix of %dump-ir-to-screen."""
+    from cangjie_build.stages import test as test_stage
+
+    task_py = tmp_path / "maple_test" / "task.py"
+    task_py.parent.mkdir(parents=True)
+    task_py.write_text("            for key, value in internal_var.items():\n")
+
+    test_stage.patch_framework(tmp_path)
+    patched = task_py.read_text()
+    assert "sorted(internal_var.items(), key=lambda kv: -len(kv[0]))" in patched
+
+    # Idempotent: a second call must not double-wrap the loop.
+    test_stage.patch_framework(tmp_path)
+    assert patched == task_py.read_text()
