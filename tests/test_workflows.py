@@ -289,3 +289,37 @@ def test_guide_is_a_separate_project_that_ci_does_not_silently_skip() -> None:
     assert "if [[ -f guide/pyproject.toml ]]" in hook
     for command in ("ruff check", "pyright", "ty check", "pytest"):
         assert command in hook
+
+
+def test_no_action_still_targets_the_deprecated_node_20_runtime() -> None:
+    """GitHub annotates every run that uses one; checkout@v4 was the last."""
+    body = "\n".join(
+        _read(p)
+        for p in (
+            ".github/workflows/build-cangjie.yml",
+            ".github/workflows/build-cangjie-azure.yml",
+            ".github/workflows/test-cangjie-azure.yml",
+            ".github/workflows/reap-orphans.yml",
+        )
+    )
+    assert "actions/checkout@v4" not in body
+    assert "actions/checkout@v5" in body
+
+
+def test_sccache_annotation_is_disabled_and_replaced_by_a_summary() -> None:
+    """The action samples stats after --stop-server, so it always reports zeros."""
+    azure = _read(".github/workflows/build-cangjie-azure.yml")
+    assert "disable_annotations: 'true'" in azure
+    assert "sccache-summary.sh" in azure
+    # The stats have to be captured before the server goes away. Comments mention
+    # --stop-server earlier, so the comparison is against the command itself.
+    capture = azure.index(".github/scripts/sccache-summary.sh")
+    stop = azure.index("--stop-server || true")
+    assert capture < stop
+
+
+def test_test_stage_writes_a_summary() -> None:
+    from cangjie_build import summary
+
+    reports = [summary.SuiteReport("llt", {"total": 3, "PASS": 3})]
+    assert "| LLT | 3 | 3 | 0 |" in summary.render(reports)

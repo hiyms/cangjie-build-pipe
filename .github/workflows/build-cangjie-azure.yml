@@ -122,7 +122,7 @@ jobs:
       region: ${{ steps.vm.outputs.region }}
       priority: ${{ steps.vm.outputs.priority }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: azure/login@v3
         with:
@@ -211,7 +211,7 @@ jobs:
       SCCACHE_AZURE_CONNECTION_STRING: ${{ secrets.SCCACHE_AZURE_CONNECTION_STRING }}
       SCCACHE_AZURE_BLOB_CONTAINER: sccache
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: astral-sh/setup-uv@v10.3.3
         with:
@@ -223,8 +223,15 @@ jobs:
       - name: Install Ubuntu system packages
         run: uv run cangjie-build install-system-deps
 
+      # The action's post step reads `--show-stats` after our own `--stop-server`
+      # has already shut the server down, so it always annotates
+      # "0% - 0 hits, 0 misses, 0 errors". That annotation is worse than none: it
+      # reports a real-looking number that is always wrong. Its stats are
+      # replaced by the summary the flush step writes below.
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.10
+        with:
+          disable_annotations: 'true'
 
       # sccache reads this variable itself, so it has to be fixed in the
       # environment every later step inherits, not just in one step.
@@ -414,17 +421,18 @@ jobs:
           if-no-files-found: error
 
       # Belt-and-suspenders flush: this backend is already single-tier
-      # (azblob, no SCCACHE_DIR) so writes are synchronous on the client
-      # path, but --stop-server still gives the worker pool a clean
-      # 10-second grace window to drain any final in-flight blob uploads
-      # before the VM gets torn down. Print stats first because
-      # mozilla-actions/sccache-action's post hook will spawn a fresh empty
-      # server after this and report zeros.
+      # (azblob, no SCCACHE_DIR) so writes are synchronous on the client path,
+      # but --stop-server still gives the worker pool a clean 10-second grace
+      # window to drain any final in-flight blob uploads before the VM is torn
+      # down. The stats are captured before that, and written to the run summary:
+      # the action's own annotation has to be disabled because it samples the
+      # server after it is gone.
       - name: Flush sccache and stop server
         if: always()
         run: |
           set +e
-          "${SCCACHE_PATH:-sccache}" --show-stats || true
+          raw=$("${SCCACHE_PATH:-sccache}" --show-stats --stats-format=json 2>/dev/null)
+          .github/scripts/sccache-summary.sh <<<"$raw"
           "${SCCACHE_PATH:-sccache}" --stop-server || true
 
   cleanup:
@@ -433,7 +441,7 @@ jobs:
     if: always()
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: azure/login@v3
         with:

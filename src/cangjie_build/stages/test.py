@@ -8,6 +8,7 @@ import zipfile
 from pathlib import Path
 from typing import Literal, cast
 
+from cangjie_build import summary
 from cangjie_build.config import BuildConfig
 from cangjie_build.errors import BuildError
 from cangjie_build.git import shallow_clone
@@ -686,6 +687,7 @@ def run(
             for suite in suites:
                 plan[suite] = []
 
+        reports: list[summary.SuiteReport] = []
         for suite in plan:
             if suite == "conformance":
                 results = _run_conformance(
@@ -697,10 +699,12 @@ def run(
                     base_timeout=base_timeout,
                 )
                 totals = read_conformance_totals(results)
+                reports.append(summary.SuiteReport("conformance", totals))
                 _log.info("conformance results: %s", totals)
                 if not totals:
                     # A --tests mask that matches nothing would otherwise read
                     # as a clean run; no case executed means no evidence.
+                    summary.write(reports)
                     raise BuildError(
                         "test.conformance",
                         f"no cases ran (tests={tests or 'suite default'}; see {results})",
@@ -711,6 +715,7 @@ def run(
                     if k in {"FAILED", "ERRORED", "INCOMPLETE"} and v
                 }
                 if bad:
+                    summary.write(reports)
                     raise BuildError(
                         "test.conformance",
                         f"failing cases: {bad} (see {results})",
@@ -752,6 +757,7 @@ def run(
                 base_timeout=base_timeout,
             )
             totals = read_mapple_totals(results)
+            reports.append(summary.SuiteReport(suite, totals))
             _log.info("%s results: %s (details in %s)", suite.upper(), totals, results)
             # Maple's `total` counts UNRESOLVED and NOT_RUN too, and --fail_exit
             # ignores both, so a selection made only of helper files (no EXEC
@@ -764,11 +770,13 @@ def run(
                     if suite_cases
                     else (test_list or "suite default")
                 )
+                summary.write(reports)
                 raise BuildError(
                     f"test.{suite}",
                     f"no case actually executed (selection: {selected}; "
                     f"tallies: {totals}; see {results})",
                 )
+        summary.write(reports)
 
 
 def default_test_list(repo: Path, suite: Literal["hlt", "llt"]) -> Path:

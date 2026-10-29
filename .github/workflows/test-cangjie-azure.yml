@@ -116,7 +116,7 @@ jobs:
       case_count: ${{ steps.size.outputs.cases }}
       jobs: ${{ steps.size.outputs.jobs }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Validate the inputs before paying for a VM: both SDK inputs are
       # optional, and without this an operator who supplies neither only finds
@@ -291,7 +291,7 @@ jobs:
       CANGJIE_WORKSPACE: ${{ github.workspace }}/workspace
       CANGJIE_BUILD_ROOT: ${{ github.workspace }}/buildtools
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: astral-sh/setup-uv@v10.3.3
         with:
@@ -438,7 +438,7 @@ jobs:
     if: always()
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: azure/login@v3
         with:
