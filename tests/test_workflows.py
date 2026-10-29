@@ -273,3 +273,19 @@ def test_pre_commit_hook_runs_the_same_checks_as_the_lint_job() -> None:
     ):
         assert command in ci, f"CI no longer runs: {command}"
         assert command in body, f"hook does not run: {command}"
+
+
+def test_guide_is_a_separate_project_that_ci_does_not_silently_skip() -> None:
+    """The root checks exclude guide, so its own checks have to run somewhere."""
+    root = _read("pyproject.toml")
+    assert "guide" in root, "the root ruff config no longer mentions guide"
+
+    guide = _read("guide/pyproject.toml")
+    for key in ("[tool.ruff]", "[tool.pyright]", "[tool.pytest.ini_options]"):
+        assert key in guide, key
+
+    hook = _read(".githooks/pre-commit")
+    # A second project escapes the root include lists; the hook must cover it.
+    assert "if [[ -f guide/pyproject.toml ]]" in hook
+    for command in ("ruff check", "pyright", "ty check", "pytest"):
+        assert command in hook

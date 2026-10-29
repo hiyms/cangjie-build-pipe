@@ -303,6 +303,19 @@ conformance 用例对 unused 警告敏感，CLI 固定传 `--cjc-flags=-Woff unu
 C/C++ 编译；cjc 编译 .cj 源、链接 step、cmake configure、install 拷贝
 都不缓存，warm-cache 整体仍要约 12–17 分钟（compiler + tools 占大头）。
 
+## 本机操作工具
+
+`guide/` 是一个独立项目，用 `gh` CLI 在本机派发和监视这两个 Azure 工作流：
+
+```bash
+cd guide && uv sync
+uv run cangjie-guide verbose      # 检查 gh、权限、工作流文件与 secret
+uv run cangjie-guide build --dry-run
+uv run cangjie-guide test --sdk latest --suites llt --changed-in HEAD
+```
+
+它有自己的 `pyproject.toml`、锁文件和检查配置，不参与 SDK 构建。详见 `guide/README.md`。
+
 ## 代码质量
 
 ```bash

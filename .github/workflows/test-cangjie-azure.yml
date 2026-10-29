@@ -39,7 +39,7 @@ on:
       test_tag:
         description: "Branch, tag or commit SHA for cangjie_test."
         required: false
-        default: "dev"
+        default: "main"
       framework_tag:
         description: "Branch, tag or commit SHA for cangjie_test_framework. Empty = its default branch."
         required: false

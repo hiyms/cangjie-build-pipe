@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Global tag/branch applied to all four upstream repos (default = dev)."
+        description: "Global tag/branch applied to all four upstream repos (default = main)."
         required: false
-        default: "dev"
+        default: "main"
       build_type:
         description: "Build type."
         required: true

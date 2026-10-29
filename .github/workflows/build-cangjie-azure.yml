@@ -25,9 +25,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Global Cangjie tag/branch (default = dev)."
+        description: "Global Cangjie tag/branch (default = main)."
         required: false
-        default: "dev"
+        default: "main"
       target:
         description: "SDK target. linux-x64 needs no MinGW toolchain."
         required: false
