@@ -51,21 +51,20 @@ class Context:
     def workflow(self, path: str) -> Workflow:
         return registry.load(self.gh, self.repo, path, self.ref)
 
-    def use_tui(self, *, required: bool) -> bool:
-        """Whether to ask instead of running from the flags alone.
+    def asks(self) -> bool:
+        """Whether a prompt may be shown.
 
-        `--tui` forces it, `--no-tui` forbids it. With neither, the answer
-        depends on whether the command is missing a value (`required`) and
-        whether a human is at the terminal; a command that can run from its
-        defaults therefore prompts only when asked to. Call sites own the error
-        message for a missing value, so that a flag and a confirmation can say
-        what is actually missing.
+        `--tui` forces it, `--no-tui` forbids it, and with neither the answer is
+        whether a human is at the terminal. A command with a value it cannot
+        invent checks that the value is missing before calling this; a command
+        that can run from its defaults (build) uses it to decide whether to show
+        its form at all.
         """
         if self._tui is True:
             return True
         if self._tui is False:
             return False
-        return required and sys.stdout.isatty()
+        return sys.stdout.isatty()
 
 
 @app.callback()
@@ -168,7 +167,7 @@ def build(
             f"{workflow.file} at {obj.ref} declares no version input; "
             "pass --ref with a commit that has one, or omit --version"
         )
-    if obj.use_tui(required=False):
+    if obj.asks():
         from cangjie_guide.tui import ask_input
 
         for spec in workflow.inputs:
@@ -212,7 +211,7 @@ def _guard_conflicts(obj: Context, inputs: dict[str, str], *, force: bool) -> No
         ["run", "created", "expires", "bytes"],
         table_rows,
     )
-    if obj.use_tui(required=True):
+    if obj.asks():
         if _confirm_overwrite(name):
             return
         raise GuideError("aborted: would have overwritten " + name)
@@ -317,7 +316,7 @@ def test(
     workflow = obj.workflow(registry.TEST_AZURE)
 
     if sdk is None:
-        if not obj.use_tui(required=True):
+        if not obj.asks():
             raise GuideError(
                 "--sdk is required: pass a run id, an artifact name, a URL, or 'latest'"
             )
@@ -327,7 +326,7 @@ def test(
 
     suite_list = tuple(suites) if suites else ()
     if not suite_list:
-        if not obj.use_tui(required=True):
+        if not obj.asks():
             raise GuideError("--suites is required: one or more of conformance, hlt, llt")
         from cangjie_guide.tui import pick_suites
 
@@ -506,7 +505,7 @@ def logs(
     """Print run logs."""
     obj = _obj(ctx)
     if run_id is None:
-        if not obj.use_tui(required=True):
+        if not obj.asks():
             raise GuideError("run id is required")
         from cangjie_guide.tui import pick_run
 
@@ -539,7 +538,7 @@ def artifacts(
         return
 
     if run_id is None:
-        if not obj.use_tui(required=True):
+        if not obj.asks():
             raise GuideError("run id is required")
         from cangjie_guide.tui import pick_run
 
@@ -572,7 +571,7 @@ def cancel(
     """
     obj = _obj(ctx)
     if run_id is None:
-        if not obj.use_tui(required=True):
+        if not obj.asks():
             raise GuideError("run id is required")
         from cangjie_guide.tui import pick_run
 

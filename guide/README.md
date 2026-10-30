@@ -97,10 +97,10 @@ uv run cangjie-guide artifacts 40725832486 --get cangjie-linux-x64-0.0.0-dev
 ## 交互式引导
 
 引导界面用 [Questionary](https://github.com/tmbo/questionary) 实现，一次问一个输入。
-`--tui` 强制走完整表单，`--no-tui` 只用命令行参数。两者都不给时，`build` 直接按参数派发，
-`test`/`logs`/`artifacts`/`cancel` 在缺少参数且输出是终端时才询问。`build` 的每个输入
-都先填上工作流声明的默认值，回车就是接受；选择型输入只能取工作流列出的选项。
-按 Ctrl-C 取消会直接终止，不会拿空值继续派发。
+输出是终端时，`build` 默认就走完整表单：按工作流声明的顺序问每一个输入，每项预填工作流默认值，
+回车即接受，选择型输入只能取工作流列出的选项。`--no-tui` 跳过表单、只用命令行参数；
+`--tui` 在没有终端时也强制询问。`test`/`logs`/`artifacts`/`cancel` 只在缺少参数且能询问时才弹出
+选择（SDK 产物、suite、运行）。按 Ctrl-C 取消会直接终止，不会拿空值继续派发。
 
 ## 设计上刻意不做的事
 
