@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from cangjie_guide.errors import GuideError
 from cangjie_guide.schema import Workflow
 
 
@@ -47,29 +48,36 @@ def build_inputs(
         }
     for name, value in sources.items():
         if value:
-            inputs[f"{name}_source"] = value
-    format_sources(inputs)
+            inputs[f"{name}_source"] = check_source(value)
     return inputs
 
 
-def format_source(value: str) -> str:
-    """Turn URL#REF into the URL:REF form the workflows read.
+def check_source(value: str) -> str:
+    """Reject a source override the workflow would misread.
 
-    `#` separates instead of `:` because a URL already carries a colon, and the
-    workflow's own parser splits on the last colon. A value with no `#` is
-    returned unchanged, so an already-converted source survives a second pass.
+    The ref follows the URL after `#`, because a URL already carries colons (the
+    scheme, the port) and a branch name carries slashes (feat/windows-cross).
+    A value with a colon in the path is the shape that used to be accepted, and
+    it reaches git as part of the URL: the clone then asks the forge for a
+    repository named after the branch. Catching it here names the typo instead.
     """
-    url, _, ref_part = value.partition("#")
-    return f"{url}:{ref_part}" if ref_part else url
+    url, separator, ref_part = value.partition("#")
+    if not url:
+        raise GuideError(f"source {value!r} has no clone URL before the '#'")
+    if separator and not ref_part.strip():
+        raise GuideError(f"source {value!r} ends with '#' and no ref")
+    path = url.split("://", 1)[-1]
+    if "/" in path and ":" in path[path.index("/") :]:
+        raise GuideError(f"source {value!r} separates the ref with ':' in the path; write URL#ref")
+    return value
 
 
-def format_sources(inputs: dict[str, str]) -> None:
-    """Format every source override in place, however it was entered.
+def check_sources(inputs: dict[str, str]) -> None:
+    """Validate every source override in place.
 
-    Both the command line and the guided form take URL#REF, so the conversion
-    happens after either has supplied values; running it twice is harmless
-    because a value without `#` is left alone.
+    The flags and the guided form both produce `*_source` values, so the check
+    runs after either has supplied them.
     """
     for key, value in inputs.items():
         if key.endswith("_source") and value:
-            inputs[key] = format_source(value)
+            inputs[key] = check_source(value)

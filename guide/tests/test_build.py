@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 
-from cangjie_guide.inputs import build_inputs, format_source
+from cangjie_guide.errors import GuideError
+from cangjie_guide.inputs import build_inputs, check_source
 from cangjie_guide.registry import dispatch_inputs, normalise_keys
 from cangjie_guide.schema import Workflow
 
@@ -62,11 +64,23 @@ def test_an_unset_version_leaves_the_tag_in_charge() -> None:
     assert inputs["tag"] == "release/1.0"
 
 
-def test_a_source_override_uses_the_workflow_separator() -> None:
-    """`URL#REF` becomes `URL:REF`, which is what the workflow parses."""
+def test_a_source_override_travels_as_entered() -> None:
+    """The workflow splits on `#`, so the value must not be rewritten here."""
     inputs = _inputs(AZURE, compiler="https://example.invalid/cc.git#feature/x")
-    assert inputs["compiler_source"] == "https://example.invalid/cc.git:feature/x"
-    assert format_source("https://example.invalid/cc.git") == "https://example.invalid/cc.git"
+    assert inputs["compiler_source"] == "https://example.invalid/cc.git#feature/x"
+
+
+def test_a_source_override_may_not_use_the_colon_form() -> None:
+    """That shape reaches git as part of the URL and fails at the clone."""
+    with pytest.raises(GuideError, match=r"URL#ref"):
+        check_source("https://example.invalid/cc.git:feature/x")
+
+
+def test_a_source_override_needs_a_url_and_a_ref() -> None:
+    with pytest.raises(GuideError, match="no clone URL"):
+        check_source("#feature/x")
+    with pytest.raises(GuideError, match="no ref"):
+        check_source("https://example.invalid/cc.git#")
 
 
 def test_the_hosted_workflow_gets_no_vm_inputs() -> None:

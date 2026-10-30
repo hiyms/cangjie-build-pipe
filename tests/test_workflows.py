@@ -382,7 +382,7 @@ def test_source_override_splits_a_branch_name_with_slashes() -> None:
     after the branch: HTTP 403, with nothing pointing at the parse.
     """
     tokens = _fetch_args(
-        COMPILER_SOURCE="https://atomgit.com/o/cangjie_compiler.git:feat/linux-cross-windows"
+        COMPILER_SOURCE="https://atomgit.com/o/cangjie_compiler.git#feat/linux-cross-windows"
     )
     assert tokens == [
         "--repo-url",
@@ -393,7 +393,7 @@ def test_source_override_splits_a_branch_name_with_slashes() -> None:
 
 
 def test_source_override_keeps_a_port_out_of_the_ref() -> None:
-    tokens = _fetch_args(COMPILER_SOURCE="https://host:8443/o/r.git:feat/a")
+    tokens = _fetch_args(COMPILER_SOURCE="https://host:8443/o/r.git#feat/a")
     assert tokens == [
         "--repo-url",
         "compiler=https://host:8443/o/r.git",
@@ -405,11 +405,11 @@ def test_source_override_keeps_a_port_out_of_the_ref() -> None:
 def test_source_override_accepts_tag_commit_and_bare_url() -> None:
     for raw, expected in (
         (
-            "https://atomgit.com/o/r.git:1.0.2",
+            "https://atomgit.com/o/r.git#1.0.2",
             ["--repo-url", "compiler=https://atomgit.com/o/r.git", "--repo-tag", "compiler=1.0.2"],
         ),
         (
-            "https://atomgit.com/o/r.git:011f9c8",
+            "https://atomgit.com/o/r.git#011f9c8",
             [
                 "--repo-url",
                 "compiler=https://atomgit.com/o/r.git",
@@ -424,7 +424,7 @@ def test_source_override_accepts_tag_commit_and_bare_url() -> None:
 
 
 def test_source_override_prefixes_a_scheme_less_url() -> None:
-    tokens = _fetch_args(COMPILER_SOURCE="atomgit.com/o/r.git:feat/a")
+    tokens = _fetch_args(COMPILER_SOURCE="atomgit.com/o/r.git#feat/a")
     assert tokens == [
         "--repo-url",
         "compiler=https://atomgit.com/o/r.git",
@@ -450,3 +450,22 @@ def test_source_override_refuses_scp_syntax_instead_of_misreading_it() -> None:
     )
     assert proc.returncode != 0
     assert "scp syntax" in proc.stderr
+
+
+def test_source_override_refuses_the_colon_form() -> None:
+    """The separator is `#` everywhere, so a ref after `:` would reach git as URL."""
+    import os
+    import subprocess
+
+    env = {
+        **os.environ,
+        "COMPILER_SOURCE": "https://atomgit.com/o/r.git:feat/a",
+        "RUNTIME_SOURCE": "",
+        "TOOLS_SOURCE": "",
+        "STDX_SOURCE": "",
+    }
+    proc = subprocess.run(
+        [str(ROOT / ".github/scripts/build-fetch-args.sh")], capture_output=True, text=True, env=env
+    )
+    assert proc.returncode != 0
+    assert "URL#ref" in proc.stderr

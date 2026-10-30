@@ -43,7 +43,9 @@ uv run cangjie-guide build --wait                 # 派发后跟到结束
 `v` 的 MAJOR.MINOR.PATCH；带 `v` 或不是 SemVer 时本机就报错，因为 harness 会默默剥掉 `v`、
 把其余不合法输入换成 `0.0.0-dev`，产物就会以另一个版本的名字发布。
 
-`--compiler` 用的是 `URL#REF`，内部转成工作流要的 `URL:REF`。`#` 避免 URL 自带的冒号产生歧义。
+`--compiler` 用的是 `URL#REF`，与工作流输入一致，`#` 前后不需要额外转换。用 `#` 是因为 URL
+本身已经带冒号（scheme、端口），分支名又带斜杠（`feat/linux-cross-windows`），只有 `#` 能同时避开两者。
+写成 `URL:REF` 会在派发前报错，否则那一整串会被当成 clone URL，git 会去找一个名为该分支的仓库。
 
 派发前会做两项检查：
 

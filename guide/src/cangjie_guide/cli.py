@@ -11,7 +11,7 @@ from rich.table import Table
 from cangjie_guide import constraints, doctor, registry, runs
 from cangjie_guide.errors import GuideError
 from cangjie_guide.gh import Gh, GhError
-from cangjie_guide.inputs import build_inputs, format_sources
+from cangjie_guide.inputs import build_inputs, check_sources
 from cangjie_guide.schema import Artifact, Workflow
 from cangjie_guide.version import explicit, normalise
 
@@ -173,9 +173,9 @@ def build(
         for spec in workflow.inputs:
             inputs[spec.name] = ask_input(spec, inputs.get(spec.name, spec.default))
 
-    # A source entered on the command line or into the form both arrive as
-    # URL#REF, and both need the separator the workflows parse.
-    format_sources(inputs)
+    # The form accepts source overrides too, so the check runs after both
+    # sources of values have been applied.
+    check_sources(inputs)
     _check_inputs(workflow, inputs)
 
     if not hosted:

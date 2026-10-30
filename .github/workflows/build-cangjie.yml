@@ -21,7 +21,7 @@ on:
           - debug
           - relwithdebinfo
       compiler_source:
-        description: "Override compiler source: the clone URL, optionally followed by :ref (a branch with slashes is fine). Leaving it empty uses the default branch, or tag for the ref."
+        description: "Override compiler source: clone URL, optionally followed by # and the branch, tag or commit (a branch with slashes is fine). Empty uses the default branch, or tag for the ref."
         required: false
         default: ""
       runtime_source:
