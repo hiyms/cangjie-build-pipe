@@ -32,19 +32,24 @@ secret 列表需要仓库 admin 权限；拿不到时该项标为「无法验证
 ```bash
 uv run cangjie-guide build                        # linux-x64，tag=main，Spot
 uv run cangjie-guide build --target windows-x64
+uv run cangjie-guide build --version 1.0.2        # 产出版本号，不带前导 v
 uv run cangjie-guide build --compiler 'https://atomgit.com/Cangjie/cangjie_compiler.git#011f9c8'
 uv run cangjie-guide build --dry-run              # 只打印将要发送的参数
 uv run cangjie-guide build --wait                 # 派发后跟到结束
 ```
 
+`--version` 决定写进 SDK 与产物名字的版本号，`--tag` 决定从哪个 ref 取源码，两者互不影响。
+不给 `--version` 时工作流按 `tag` 推导（分支名归一化成 `0.0.0-dev`）。版本号必须是不带前导
+`v` 的 MAJOR.MINOR.PATCH；带 `v` 或不是 SemVer 时本机就报错，因为 harness 会默默剥掉 `v`、
+把其余不合法输入换成 `0.0.0-dev`，产物就会以另一个版本的名字发布。
+
 `--compiler` 用的是 `URL#REF`，内部转成工作流要的 `URL:REF`。`#` 避免 URL 自带的冒号产生歧义。
 
 派发前会做两项检查：
 
-**同名产物**。`upload-artifact` 遇到同名产物会覆盖，而版本号是归一化的——`tag=main` 和
-`tag=dev` 都变成 `0.0.0-dev`，所以一次重构建会顶掉上一次的归档，即使测试正引用着它。
-发现同名未过期产物时列出它的来源与过期时间：非交互环境下报错并提示加 `--force`，
-有 TUI 时弹出确认。
+**同名产物**。`upload-artifact` 遇到同名产物会覆盖，所以一次重构建会顶掉上一次的归档，
+即使测试正引用着它。发现同名未过期产物时列出它的来源与过期时间：非交互环境下报错并提示
+加 `--force`，有 TUI 时弹出确认（默认选「不替换」）。
 
 **在途运行**。仓库没有声明 `concurrency:`，重复派发不会排队，会再开一台 VM。
 两台 16 vCPU 争同一份 `lowPriorityCores` 配额，第二台还可能被静默升到 Regular，价格约五倍。
@@ -91,8 +96,11 @@ uv run cangjie-guide artifacts 40725832486 --get cangjie-linux-x64-0.0.0-dev
 
 ## 交互式引导
 
-参数不足时会弹出选择界面，参数齐全则直接执行。`--tui` 强制引导，`--no-tui` 禁止引导
-（参数不足就报错退出）。输出不是终端时不会尝试引导。
+引导界面用 [Questionary](https://github.com/tmbo/questionary) 实现，一次问一个输入。
+`--tui` 强制走完整表单，`--no-tui` 只用命令行参数。两者都不给时，`build` 直接按参数派发，
+`test`/`logs`/`artifacts`/`cancel` 在缺少参数且输出是终端时才询问。`build` 的每个输入
+都先填上工作流声明的默认值，回车就是接受；选择型输入只能取工作流列出的选项。
+按 Ctrl-C 取消会直接终止，不会拿空值继续派发。
 
 ## 设计上刻意不做的事
 

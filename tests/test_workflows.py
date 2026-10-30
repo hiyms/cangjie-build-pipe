@@ -189,6 +189,23 @@ def test_sccache_connection_string_is_normalised_before_use() -> None:
     assert body.index("Normalise the sccache connection string") < body.index("Build compiler")
 
 
+def test_build_workflows_separate_the_version_from_the_source_ref() -> None:
+    """The version names the artifact; the tag picks the sources."""
+    for path in (
+        ".github/workflows/build-cangjie.yml",
+        ".github/workflows/build-cangjie-azure.yml",
+    ):
+        body = _read(path)
+        assert "      version:\n" in body, path
+        version_step = body.split("- name: Resolve effective Cangjie version", 1)[1]
+        version_step = version_step.split("- name:", 1)[0]
+        # The tag still reaches fetch as the global ref.
+        assert "TAG: ${{ inputs.tag }}" in version_step
+        assert "VERSION: ${{ inputs.version }}" in version_step
+        # An explicit version that normalises to something else must not ship.
+        assert '[[ -n "$VERSION" && "$value" != "$VERSION" ]]' in version_step
+
+
 def test_test_workflow_can_point_at_another_test_repository() -> None:
     """A pull request's cases live on a forge GitHub does not mirror."""
     body = _read(".github/workflows/test-cangjie-azure.yml")

@@ -74,12 +74,18 @@ lld，cangjie 自带的 clang 在 cjc emit 时也用 lld。
 - `.github/workflows/build-cangjie.yml` — GitHub Actions 托管 runner 上
   的矩阵构建（`linux-x64` + `windows-x64`），多级 sccache（disk L0 +
   GHA L1）。`workflow_dispatch` 触发器参数与上游 `tozi-team/cangjie_build`
-  对齐：全局 `tag`、按仓库覆盖的 URL/tag、`build_type`、`run_tests`。
+  对齐：全局 `tag`、按仓库覆盖的 URL/tag、`build_type`、`run_tests`，另加
+  `version`（见下）。
 - `.github/workflows/build-cangjie-azure.yml` — Azure ephemeral VM 跑
   `windows-x64` cross-compile（默认 `Standard_F16als_v7` 的 Spot 实例，区域
   fallback `eastus → eastus2 → centralus → westus3`）。GHA cache API 在重活下
   会 429 限流，改成把 sccache 写入 Azure Blob 容器
   （`SCCACHE_AZURE_BLOB_CONTAINER=sccache`）。
+
+两条工作流都有 `version` 输入：它决定写进 `-v` 与产物名字的版本号，`tag` 只决定源码 ref。
+留空则按 `tag` 推导（分支名归一化为 `0.0.0-dev`）。填了就必须是不带前导 `v` 的
+MAJOR.MINOR.PATCH，否则 `Resolve effective Cangjie version` 这一步会在 provision 之前失败——
+harness 会默默剥掉 `v`、把其余不合法输入换成 `0.0.0-dev`，产物就会以另一个版本的名字发布。
 
 `.github/workflows/reap-orphans.yml` 是 Azure 的安全网：定时清理被取消或异常
 中断的 `cangjie-*` Azure resource group。项目只支持 Azure，GCP 相关的工作流和

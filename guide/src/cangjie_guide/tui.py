@@ -1,118 +1,95 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
-from textual.app import App, ComposeResult
-from textual.containers import Vertical
-from textual.screen import ModalScreen
-from textual.widgets import Button, Footer, Header, Label, ListItem, ListView, Static
+import questionary
 
-from cangjie_guide.schema import Artifact
-
-
-class ChoiceScreen(ModalScreen[Any]):
-    """Pick one item from a list, or cancel."""
-
-    def __init__(self, title: str, options: Sequence[tuple[str, Any]]) -> None:
-        super().__init__()
-        self._title = title
-        self._options = list(options)
-
-    def compose(self) -> ComposeResult:
-        with Vertical():
-            yield Header()
-            yield Label(self._title)
-            yield ListView(
-                *[
-                    ListItem(Label(label), id=f"opt-{index}")
-                    for index, (label, _) in enumerate(self._options)
-                ],
-                id="choices",
-            )
-            yield Button("Cancel", id="cancel")
-            yield Footer()
-
-    def on_list_view_selected(self, event: ListView.Selected) -> None:
-        index = event.list_view.index
-        if index is None:
-            self.dismiss(None)
-            return
-        self.dismiss(self._options[index][1])
-
-    def on_button_pressed(self, _: Button.Pressed) -> None:
-        self.dismiss(None)
+from cangjie_guide.constraints import SUITE_NAMES
+from cangjie_guide.errors import GuideError
+from cangjie_guide.schema import Artifact, WorkflowInput
+from cangjie_guide.version import explicit as explicit_version
 
 
-class ConfirmScreen(ModalScreen[bool]):
-    def __init__(self, question: str) -> None:
-        super().__init__()
-        self._question = question
+def _answer(question: questionary.Question, what: str) -> Any:
+    """Ask one question, refusing an aborted prompt.
 
-    def compose(self) -> ComposeResult:
-        with Vertical():
-            yield Header()
-            yield Static(self._question, id="question")
-            yield Button("Yes", id="yes", variant="warning")
-            yield Button("No", id="no", variant="primary")
-            yield Footer()
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        self.dismiss(event.button.id == "yes")
+    questionary returns None both for Ctrl-C and for a closed stdin, so a value
+    taken straight from ask() could reach a dispatch as the literal string
+    "None".
+    """
+    answer = question.ask()
+    if answer is None:
+        raise GuideError(f"cancelled while asking for {what}")
+    return answer
 
 
-class _Prompt(App[Any]):
-    SCREEN: type[Any] = ChoiceScreen
-
-    def __init__(self, screen: Any) -> None:
-        super().__init__()
-        self._screen = screen
-
-    def on_mount(self) -> None:
-        self.push_screen(self._screen)
-
-
-class _ConfirmApp(App[Any]):
-    def __init__(self, screen: ConfirmScreen) -> None:
-        super().__init__()
-        self._screen = screen
-
-    def on_mount(self) -> None:
-        self.push_screen(self._screen)
+def confirm(question: str, *, default: bool = True) -> bool:
+    """A yes/no question; Enter accepts `default`."""
+    return bool(_answer(questionary.confirm(question, default=default), question))
 
 
 def choose(title: str, options: Sequence[tuple[str, Any]]) -> Any:
-    app: _Prompt = _Prompt(ChoiceScreen(title, options))
-    return app.run()
+    """Pick one of the (label, value) pairs."""
+    if not options:
+        raise GuideError(f"{title}: nothing to choose from")
+    choices = [questionary.Choice(title=label, value=value) for label, value in options]
+    return _answer(questionary.select(title, choices=choices), title)
 
 
-def confirm(question: str) -> bool:
-    app = _ConfirmApp(ConfirmScreen(question))
-    return bool(app.run())
+def _validator(spec: WorkflowInput) -> Callable[[str], bool | str]:
+    """Per-input rule, evaluated as the user types."""
+
+    def validate(value: str) -> bool | str:
+        if spec.required and not value.strip():
+            return f"{spec.name} is required"
+        if spec.name == "version" and value.strip():
+            try:
+                explicit_version(value)
+            except GuideError as exc:
+                return str(exc)
+        return True
+
+    return validate
+
+
+def ask_input(spec: WorkflowInput, current: str) -> str:
+    """Ask for one workflow input, seeded with the value already decided.
+
+    A choice input can only take one of the declared options, because the
+    workflow rejects anything else. Everything else is free text, and Enter
+    accepts the default the workflow declares.
+    """
+    prompt = f"{spec.name} ({spec.description})" if spec.description else spec.name
+    if spec.is_choice:
+        default = current if current in spec.options else spec.options[0]
+        return str(
+            _answer(
+                questionary.select(prompt, choices=list(spec.options), default=default), spec.name
+            )
+        )
+    return str(
+        _answer(questionary.text(prompt, default=current, validate=_validator(spec)), spec.name)
+    )
 
 
 def pick_sdk(choices: Sequence[Artifact]) -> str:
     if not choices:
-        from cangjie_guide.errors import GuideError
-
         raise GuideError("no unexpired linux SDK artifact to choose from; build one first")
     options = [(f"{a.name}  run {a.run_id}  expires {a.expires_at}", a.name) for a in choices]
-    picked = choose("Select an SDK artifact", options)
-    if picked is None:
-        from cangjie_guide.errors import GuideError
-
-        raise GuideError("no artifact selected")
-    return str(picked)
+    return str(choose("Select an SDK artifact", options))
 
 
 def pick_suites() -> tuple[str, ...]:
-    options = [("llt", "llt"), ("hlt", "hlt"), ("conformance", "conformance")]
-    picked = choose("Select a suite", options)
-    if picked is None:
-        from cangjie_guide.errors import GuideError
-
-        raise GuideError("no suite selected")
-    return (str(picked),)
+    selected = _answer(
+        questionary.checkbox(
+            "Select the suites to run",
+            choices=[questionary.Choice(title=name, value=name) for name in SUITE_NAMES],
+            validate=lambda picked: bool(picked) or "select at least one suite",
+        ),
+        "suites",
+    )
+    return tuple(str(name) for name in selected)
 
 
 def pick_run(runs: Sequence[dict[str, Any]]) -> str:
@@ -123,9 +100,4 @@ def pick_run(runs: Sequence[dict[str, Any]]) -> str:
         )
         for r in runs
     ]
-    picked = choose("Select a run", options)
-    if picked is None:
-        from cangjie_guide.errors import GuideError
-
-        raise GuideError("no run selected")
-    return str(picked)
+    return str(choose("Select a run", options))

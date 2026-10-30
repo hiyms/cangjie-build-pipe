@@ -11,7 +11,9 @@ from rich.table import Table
 from cangjie_guide import constraints, doctor, registry, runs
 from cangjie_guide.errors import GuideError
 from cangjie_guide.gh import Gh, GhError
+from cangjie_guide.inputs import build_inputs, format_sources
 from cangjie_guide.schema import Artifact, Workflow
+from cangjie_guide.version import explicit, normalise
 
 app = typer.Typer(
     add_completion=False,
@@ -50,17 +52,18 @@ class Context:
         return registry.load(self.gh, self.repo, path, self.ref)
 
     def use_tui(self, *, required: bool) -> bool:
-        """Whether to fall back to guided input.
+        """Whether to ask instead of running from the flags alone.
 
-        `--tui` forces it, `--no-tui` forbids it, and with neither the answer
-        depends on whether the command has everything it needs and whether a
-        human is at the terminal.
+        `--tui` forces it, `--no-tui` forbids it. With neither, the answer
+        depends on whether the command is missing a value (`required`) and
+        whether a human is at the terminal; a command that can run from its
+        defaults therefore prompts only when asked to. Call sites own the error
+        message for a missing value, so that a flag and a confirmation can say
+        what is actually missing.
         """
         if self._tui is True:
             return True
         if self._tui is False:
-            if required:
-                raise GuideError("missing required arguments and --no-tui was given")
             return False
         return required and sys.stdout.isatty()
 
@@ -105,6 +108,10 @@ def _status_mark(status: str) -> str:
 @app.command()
 def build(
     ctx: typer.Context,
+    version: Annotated[
+        str | None,
+        typer.Option(help="Release version baked into the SDK, without a leading v (e.g. 1.0.2)."),
+    ] = None,
     target: Annotated[str, typer.Option(help="SDK target.")] = "linux-x64",
     tag: Annotated[str, typer.Option(help="Upstream ref to build.")] = "main",
     build_type: Annotated[str, typer.Option("--build-type", help="Build type.")] = "relwithdebinfo",
@@ -140,31 +147,40 @@ def build(
     path = registry.BUILD_HOSTED if hosted else registry.BUILD_AZURE
     workflow = obj.workflow(path)
 
-    inputs: dict[str, str] = {"tag": tag, "build_type": build_type}
-    if not hosted:
-        inputs |= {
-            "target": target,
-            "vm_size": vm_size,
-            "vm_regions": region,
-            "vm_priority": priority,
-            "os_disk_size_gb": disk_size_gb,
-            "os_disk_sku": disk_sku,
-            "cache_container": cache_container,
-        }
-    for name, value in (
-        ("compiler", compiler),
-        ("runtime", runtime),
-        ("tools", tools),
-        ("stdx", stdx),
-    ):
-        if value:
-            url, _, ref_part = value.partition("#")
-            inputs[f"{name}_source"] = f"{url}:{ref_part}" if ref_part else url
+    inputs = build_inputs(
+        workflow,
+        version=None if version is None else explicit(version),
+        tag=tag,
+        target=target,
+        build_type=build_type,
+        sources={"compiler": compiler, "runtime": runtime, "tools": tools, "stdx": stdx},
+        vm_size=vm_size,
+        regions=region,
+        priority=priority,
+        disk_size_gb=disk_size_gb,
+        disk_sku=disk_sku,
+        cache_container=cache_container,
+        hosted=hosted,
+    )
 
+    if version is not None and "version" not in inputs:
+        raise GuideError(
+            f"{workflow.file} at {obj.ref} declares no version input; "
+            "pass --ref with a commit that has one, or omit --version"
+        )
+    if obj.use_tui(required=False):
+        from cangjie_guide.tui import ask_input
+
+        for spec in workflow.inputs:
+            inputs[spec.name] = ask_input(spec, inputs.get(spec.name, spec.default))
+
+    # A source entered on the command line or into the form both arrive as
+    # URL#REF, and both need the separator the workflows parse.
+    format_sources(inputs)
     _check_inputs(workflow, inputs)
 
     if not hosted:
-        _guard_conflicts(obj, workflow, inputs, force=force)
+        _guard_conflicts(obj, inputs, force=force)
     _guard_active_runs(obj, workflow)
 
     if dry_run:
@@ -173,22 +189,15 @@ def build(
     _dispatch(obj, workflow, inputs, wait=wait)
 
 
-def _guard_conflicts(
-    obj: Context, workflow: Workflow, inputs: dict[str, str], *, force: bool
-) -> None:
+def _guard_conflicts(obj: Context, inputs: dict[str, str], *, force: bool) -> None:
     """Refuse to overwrite an artifact another run may be using.
 
-    upload-artifact replaces same-named artifacts, and the version is normalised
-    (tag=main and tag=dev both become 0.0.0-dev), so rebuilding silently
-    replaces whatever the previous run produced.
+    upload-artifact replaces same-named artifacts, so a rebuild of one version
+    silently takes away the archive a test may be pointed at.
     """
-    version_input = workflow.input("tag")
-    raw = inputs.get("tag", version_input.default if version_input else "")
-    # Local normalisation mirrors the workflow's print-version step; a value that
-    # is not SemVer becomes the placeholder the harness uses.
-    from cangjie_guide.version import normalise
-
-    version = normalise(raw)
+    # Mirrors the workflow's print-version step: an unset version falls back to
+    # the tag, and a tag that is not SemVer becomes the harness placeholder.
+    version = inputs.get("version", "").strip() or normalise(inputs.get("tag", ""))
     target = inputs.get("target", "linux-x64")
     name = f"cangjie-{target}-{version}"
     existing = runs.conflicting_artifacts(obj.gh, obj.repo, name)
@@ -213,9 +222,10 @@ def _guard_conflicts(
 
 
 def _confirm_overwrite(name: str) -> bool:
+    """Ask before replacing an artifact, against the default of keeping it."""
     from cangjie_guide.tui import confirm
 
-    return confirm(f"Replace the existing artifact {name}?")
+    return confirm(f"Replace the existing artifact {name}?", default=False)
 
 
 def _guard_active_runs(obj: Context, workflow: Workflow) -> None:
