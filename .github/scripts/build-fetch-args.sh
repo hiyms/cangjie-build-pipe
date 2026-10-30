@@ -2,11 +2,15 @@
 # Translate four per-repo "source" inputs into the --repo-url / --repo-tag
 # argv that `cangjie-build fetch` expects.
 #
-# Each source input is a string of the form:
-#   https://host/owner/repo.git:branch (full URL — the expected form)
-#   https://host/owner/repo.git        (no branch — falls through to the global --tag)
-#   host/owner/repo.git[:branch]       (scheme-less — "https://" prepended as fallback)
-#   <empty>                            (no override — use the upstream default)
+# Each source input is the repository URL, optionally followed by `:` and the
+# branch, tag or commit to build from:
+#
+#   https://atomgit.com/owner/repo.git                     (ref = the global --tag)
+#   https://atomgit.com/owner/repo.git:1.0.2               (tag)
+#   https://atomgit.com/owner/repo.git:011f9c8             (commit)
+#   https://atomgit.com/owner/repo.git:feat/windows-cross  (branch; slashes allowed)
+#   atomgit.com/owner/repo.git:feat/windows-cross          (scheme-less; https:// prepended)
+#   <empty>                                                (no override)
 #
 # Usage:
 #   COMPILER_SOURCE=... RUNTIME_SOURCE=... TOOLS_SOURCE=... STDX_SOURCE=... \
@@ -25,16 +29,37 @@ emit() {
 	raw="${raw%"${raw##*[![:space:]]}"}" # trim trailing whitespace
 	[[ -z "$raw" ]] && return 0
 
-	local url_part branch=""
-	# Treat the last `:` as the URL/branch separator only when what follows is
-	# branch-like (no slashes). Otherwise the colon belongs to the scheme.
-	if [[ "$raw" =~ ^(.+):([^/[:space:]]+)$ ]]; then
-		url_part="${BASH_REMATCH[1]}"
-		branch="${BASH_REMATCH[2]}"
-	else
-		url_part="$raw"
+	local scheme="" rest="$raw"
+	if [[ "$raw" =~ ^([A-Za-z][A-Za-z0-9+.-]*://)(.*)$ ]]; then
+		scheme="${BASH_REMATCH[1]}"
+		rest="${BASH_REMATCH[2]}"
 	fi
 
+	# The ref separator is a colon in the path, never the scheme colon and never
+	# a port colon. Branch names contain slashes (feat/windows-cross), so the
+	# path has to be separated from the host before the ref is split off, and a
+	# git refname can never contain a colon, so the last path colon is the one.
+	local hostport="$rest" path=""
+	if [[ "$rest" == */* ]]; then
+		hostport="${rest%%/*}"
+		path="/${rest#*/}"
+	fi
+
+	# scp-like `git@host:owner/repo.git` puts the path after a colon instead of
+	# a slash. Accepting it here would emit a URL with a colon in the host, and
+	# the clone would fail far from this line, so it is refused instead.
+	if [[ -z "$scheme" && "$hostport" == *:* && ! "${hostport##*:}" =~ ^[0-9]+$ ]]; then
+		echo "$name: '$raw' looks like scp syntax; write it as ssh://git@host/path/to/repo.git" >&2
+		exit 1
+	fi
+
+	local url_path="$path" branch=""
+	if [[ "$path" == *:* ]]; then
+		url_path="${path%:*}"
+		branch="${path##*:}"
+	fi
+
+	local url_part="${scheme}${hostport}${url_path}"
 	case "$url_part" in
 	http://* | https://* | git://* | ssh://*) ;;
 	*) url_part="https://$url_part" ;;

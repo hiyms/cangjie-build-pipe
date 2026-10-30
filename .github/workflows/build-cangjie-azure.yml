@@ -50,19 +50,19 @@ on:
           - debug
           - relwithdebinfo
       compiler_source:
-        description: "Override compiler source: https://host/owner/repo.git:branch (branch optional)."
+        description: "Override compiler source: the clone URL, optionally followed by :ref (a branch with slashes is fine). Leaving it empty uses the default branch, or tag for the ref."
         required: false
         default: ""
       runtime_source:
-        description: "Override runtime source: https://host/owner/repo.git:branch (branch optional)."
+        description: "Override runtime source: same form as compiler_source."
         required: false
         default: ""
       tools_source:
-        description: "Override tools source: https://host/owner/repo.git:branch (branch optional)."
+        description: "Override tools source: same form as compiler_source."
         required: false
         default: ""
       stdx_source:
-        description: "Override stdx source: https://host/owner/repo.git:branch (branch optional)."
+        description: "Override stdx source: same form as compiler_source."
         required: false
         default: ""
       vm_size:

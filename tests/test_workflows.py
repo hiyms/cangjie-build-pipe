@@ -355,3 +355,98 @@ def test_a_failing_case_does_not_look_like_a_broken_pipeline() -> None:
     assert "exit 0" in run_step
     assert "Report the test verdict" in body
     assert "steps.run-suites.outputs.status" in body
+
+
+def _fetch_args(**env: str) -> list[str]:
+    """Run the source-override translator with one variable set."""
+    import os
+    import subprocess
+
+    base = {"COMPILER_SOURCE": "", "RUNTIME_SOURCE": "", "TOOLS_SOURCE": "", "STDX_SOURCE": ""}
+    merged = {**os.environ, **base, **env}
+    proc = subprocess.run(
+        [str(ROOT / ".github/scripts/build-fetch-args.sh")],
+        capture_output=True,
+        text=True,
+        env=merged,
+        check=True,
+    )
+    return proc.stdout.split()
+
+
+def test_source_override_splits_a_branch_name_with_slashes() -> None:
+    """`feat/x` is a branch, not part of the URL.
+
+    Splitting the ref off by rejecting anything containing `/` left the whole
+    string in the URL slot, and git then asked the forge for a repository named
+    after the branch: HTTP 403, with nothing pointing at the parse.
+    """
+    tokens = _fetch_args(
+        COMPILER_SOURCE="https://atomgit.com/o/cangjie_compiler.git:feat/linux-cross-windows"
+    )
+    assert tokens == [
+        "--repo-url",
+        "compiler=https://atomgit.com/o/cangjie_compiler.git",
+        "--repo-tag",
+        "compiler=feat/linux-cross-windows",
+    ]
+
+
+def test_source_override_keeps_a_port_out_of_the_ref() -> None:
+    tokens = _fetch_args(COMPILER_SOURCE="https://host:8443/o/r.git:feat/a")
+    assert tokens == [
+        "--repo-url",
+        "compiler=https://host:8443/o/r.git",
+        "--repo-tag",
+        "compiler=feat/a",
+    ]
+
+
+def test_source_override_accepts_tag_commit_and_bare_url() -> None:
+    for raw, expected in (
+        (
+            "https://atomgit.com/o/r.git:1.0.2",
+            ["--repo-url", "compiler=https://atomgit.com/o/r.git", "--repo-tag", "compiler=1.0.2"],
+        ),
+        (
+            "https://atomgit.com/o/r.git:011f9c8",
+            [
+                "--repo-url",
+                "compiler=https://atomgit.com/o/r.git",
+                "--repo-tag",
+                "compiler=011f9c8",
+            ],
+        ),
+        ("https://atomgit.com/o/r.git", ["--repo-url", "compiler=https://atomgit.com/o/r.git"]),
+        ("", []),
+    ):
+        assert _fetch_args(COMPILER_SOURCE=raw) == expected, raw
+
+
+def test_source_override_prefixes_a_scheme_less_url() -> None:
+    tokens = _fetch_args(COMPILER_SOURCE="atomgit.com/o/r.git:feat/a")
+    assert tokens == [
+        "--repo-url",
+        "compiler=https://atomgit.com/o/r.git",
+        "--repo-tag",
+        "compiler=feat/a",
+    ]
+
+
+def test_source_override_refuses_scp_syntax_instead_of_misreading_it() -> None:
+    """`git@host:o/r.git` would otherwise become https://git@host:o/r.git."""
+    import os
+    import subprocess
+
+    env = {
+        **os.environ,
+        "COMPILER_SOURCE": "git@host:o/r.git",
+        "RUNTIME_SOURCE": "",
+        "TOOLS_SOURCE": "",
+        "STDX_SOURCE": "",
+    }
+    proc = subprocess.run(
+        [str(ROOT / ".github/scripts/build-fetch-args.sh")], capture_output=True, text=True, env=env
+    )
+    assert proc.returncode != 0
+    assert "scp syntax" in proc.stderr
