@@ -2,9 +2,10 @@
 # Turn `sccache --show-stats --stats-format=json` into a run summary.
 #
 # Reads the JSON on stdin and appends a markdown table to $GITHUB_STEP_SUMMARY.
-# Written as a script rather than inline because the JSON has optional keys per
-# backend (each stat is either a number or a per-key object) and the parsing is
-# long enough that inlining it in the workflow would be unreadable.
+# Written as a script rather than inline because sccache nests the per-language
+# counters (`cache_hits`, `cache_misses`, `cache_errors`) one level deeper than
+# the plain scalar counters, and the parsing is long enough that inlining it in
+# the workflow would be unreadable.
 #
 # Usage:
 #   sccache --show-stats --stats-format=json | sccache-summary.sh
@@ -38,18 +39,26 @@ except json.JSONDecodeError:
 
 
 def total(stats: object, key: str) -> int:
-    """Sum one stat across backends.
+    """Sum one counter across every language it was recorded for.
 
-    sccache reports each counter either as a plain number or as a mapping of
-    backend name to number, depending on how many were configured.
+    sccache writes a scalar counter as a plain number and a per-language one as
+    ``{"counts": {"C/C++": n}, "adv_counts": {...}}``; only ``counts`` holds the
+    per-language totals, since ``adv_counts`` is the same requests split by
+    compiler as well and summing both would double them.
     """
     if not isinstance(stats, dict):
         return 0
     value = stats.get(key)
+    if isinstance(value, bool):
+        return 0
     if isinstance(value, int):
         return value
     if isinstance(value, dict):
-        return sum(v for v in value.values() if isinstance(v, int))
+        counts = value.get("counts", value)
+        if isinstance(counts, dict):
+            return sum(
+                v for v in counts.values() if isinstance(v, int) and not isinstance(v, bool)
+            )
     return 0
 
 
@@ -73,8 +82,8 @@ lines = [
     f"| cache errors | {errors} |",
     f"| hit rate | {rate} |",
     "",
-    "A hit rate of n/a means every request was a miss, or no request reached the "
-    "cache at all — the second is what an unreachable backend looks like.",
+    "A hit rate of n/a means no request got as far as a cache lookup, which is "
+    "the shape an unreachable backend leaves.",
 ]
 
 path = os.environ["GITHUB_STEP_SUMMARY"]

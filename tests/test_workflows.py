@@ -335,6 +335,54 @@ def test_sccache_annotation_is_disabled_and_replaced_by_a_summary() -> None:
     assert capture < stop
 
 
+def _run_sccache_summary(tmp_path: Path, stdout: str) -> str:
+    import os
+    import subprocess
+
+    target = tmp_path / "summary.md"
+    env = {**os.environ, "GITHUB_STEP_SUMMARY": str(target)}
+    subprocess.run(
+        [str(ROOT / ".github/scripts/sccache-summary.sh")],
+        input=stdout,
+        text=True,
+        env=env,
+        check=True,
+    )
+    return target.read_text(encoding="utf-8")
+
+
+def test_sccache_summary_reads_the_per_language_counters(tmp_path: Path) -> None:
+    """sccache 0.19.0 nests hits/misses under `counts`, next to `adv_counts`."""
+    body = _run_sccache_summary(
+        tmp_path,
+        '{"stats":{"compile_requests":6778,'
+        '"cache_hits":{"counts":{"C/C++":6409},"adv_counts":{"c++ [clang]":6409}},'
+        '"cache_misses":{"counts":{"C/C++":311},"adv_counts":{"c++ [clang]":311}},'
+        '"cache_errors":{"counts":{"C/C++":18},"adv_counts":{"c++ [clang]":18}}}}',
+    )
+    assert "| cache hits | 6409 |" in body
+    assert "| cache misses | 311 |" in body
+    assert "| cache errors | 18 |" in body
+    assert "| hit rate | 95% |" in body
+
+
+def test_sccache_summary_does_not_double_count_adv_counts(tmp_path: Path) -> None:
+    """`adv_counts` repeats the same requests split by compiler as well."""
+    body = _run_sccache_summary(
+        tmp_path,
+        '{"stats":{"compile_requests":2,'
+        '"cache_hits":{"counts":{"C/C++":2},"adv_counts":{"c [gcc]":1,"c++ [clang]":1}}}}',
+    )
+    assert "| cache hits | 2 |" in body
+
+
+def test_sccache_summary_reports_an_untouched_cache_as_na(tmp_path: Path) -> None:
+    body = _run_sccache_summary(
+        tmp_path, '{"stats":{"compile_requests":0,"cache_hits":{"counts":{}}}}'
+    )
+    assert "| hit rate | n/a |" in body
+
+
 def test_test_stage_writes_a_summary() -> None:
     from cangjie_build import summary
 
