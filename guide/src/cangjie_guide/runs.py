@@ -127,17 +127,17 @@ def active_runs(gh: Gh, repo: str, workflow_file: str) -> list[dict[str, Any]]:
     compete for the same lowPriorityCores quota, and the second one can escalate
     to Regular at roughly five times the price without anyone asking for it.
     """
-    args = [
-        "run",
-        "list",
-        "--workflow",
-        workflow_file,
-        "--limit",
-        "20",
-        "--json",
-        "databaseId,status,conclusion,headBranch,createdAt",
-    ]
-    entries = gh.run_list(repo, args)
+    entries = gh.run_list(
+        repo,
+        [
+            "--workflow",
+            workflow_file,
+            "--limit",
+            "20",
+            "--json",
+            "databaseId,status,conclusion,headBranch,createdAt",
+        ],
+    )
     active = [
         entry
         for entry in entries

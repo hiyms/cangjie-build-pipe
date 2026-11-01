@@ -150,8 +150,19 @@ class Gh:
         return dict(self.json(["run", "view", run_id, "-R", repo, "--json", fields]))
 
     def run_list(self, repo: str, args: list[str]) -> list[dict[str, Any]]:
+        """``gh run list`` with the caller's own flags.
+
+        ``args`` holds flags only: this method supplies the subcommand, so a
+        caller passing ``run list`` again would produce ``gh run list run list``.
+        """
         payload = self.json(["run", "list", "-R", repo, *args])
         return [dict(entry) for entry in cast(list[Any], payload)]
+
+    def run_logs(self, repo: str, run_id: str, *, job: str | None = None) -> str:
+        args = ["run", "view", run_id, "-R", repo, "--log"]
+        if job:
+            args += ["--job", job]
+        return self.text(args)
 
     def run_download(self, repo: str, run_id: str, name: str, dest: str) -> None:
         self.text(["run", "download", run_id, "-R", repo, "-n", name, "-D", dest])

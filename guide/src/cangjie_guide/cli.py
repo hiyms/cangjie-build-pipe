@@ -445,15 +445,14 @@ def runs_command(
 ) -> None:
     """List recent runs."""
     obj = _obj(ctx)
-    payload: list[dict[str, Any]] = obj.gh.json(
+    payload = obj.gh.run_list(
+        obj.repo,
         [
-            "run",
-            "list",
             "--limit",
             str(limit),
             "--json",
             "databaseId,workflowName,status,conclusion,headBranch,createdAt",
-        ]
+        ],
     )
     rows = [
         [
@@ -521,10 +520,7 @@ def logs(
         from cangjie_guide.tui import pick_run
 
         run_id = pick_run(_recent_runs(obj))
-    args = ["run", "view", run_id, "--log"]
-    if job:
-        args += ["--job", job]
-    console.print(obj.gh.text(args))
+    console.print(obj.gh.run_logs(obj.repo, run_id, job=job))
 
 
 @app.command()
@@ -596,17 +592,15 @@ def cancel(
 
 
 def _recent_runs(obj: Context) -> list[dict[str, Any]]:
-    payload: list[dict[str, Any]] = obj.gh.json(
+    return obj.gh.run_list(
+        obj.repo,
         [
-            "run",
-            "list",
             "--limit",
             "20",
             "--json",
             "databaseId,workflowName,status,conclusion,createdAt",
-        ]
+        ],
     )
-    return payload
 
 
 # -- verbose ------------------------------------------------------------------

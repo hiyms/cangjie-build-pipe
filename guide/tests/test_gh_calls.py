@@ -96,3 +96,56 @@ def test_an_invalid_artifact_page_is_an_error() -> None:
 
     with pytest.raises(Exception, match="exit"):
         Gh.paged_artifacts(gh, "repos/owner/repo/actions/artifacts")
+
+
+def test_active_runs_builds_one_run_list_invocation() -> None:
+    """The wrapper already supplies `run list`; the flags must not repeat it."""
+    gh = _RecordingGh({"run list": [{"status": "in_progress", "databaseId": 7}]})
+
+    runs.active_runs(gh, "owner/repo", ".github/workflows/build.yml")
+
+    argv = gh.calls[0]
+    assert argv[:2] == ["run", "list"]
+    assert argv.count("run") == 1, argv
+    assert argv.count("list") == 1, argv
+    assert "--workflow" in argv
+
+
+def test_active_runs_keeps_only_unfinished_runs() -> None:
+    """A completed run is not a reason to refuse a new dispatch."""
+    gh = _RecordingGh(
+        {
+            "run list": [
+                {"status": "completed", "databaseId": 1},
+                {"status": "in_progress", "databaseId": 2},
+                {"status": "queued", "databaseId": 3},
+            ]
+        }
+    )
+
+    active = runs.active_runs(gh, "owner/repo", ".github/workflows/build.yml")
+
+    assert [entry["databaseId"] for entry in active] == [2, 3]
+
+
+def test_run_logs_names_the_repository_and_keeps_the_job_flag() -> None:
+    gh = _RecordingGh()
+
+    gh.run_logs("owner/repo", "42", job="99")
+
+    argv = gh.calls[0]
+    assert argv[:3] == ["run", "view", "42"]
+    assert argv[argv.index("-R") + 1] == "owner/repo"
+    assert argv[argv.index("--job") + 1] == "99"
+    assert "--log" in argv
+
+
+def test_run_list_takes_flags_not_a_subcommand() -> None:
+    """A caller passing `run list` again would build `gh run list run list`."""
+    gh = _RecordingGh({"run list": []})
+
+    gh.run_list("owner/repo", ["--limit", "5", "--json", "databaseId"])
+
+    argv = gh.calls[0]
+    assert argv[:2] == ["run", "list"]
+    assert "run" not in argv[2:], argv
