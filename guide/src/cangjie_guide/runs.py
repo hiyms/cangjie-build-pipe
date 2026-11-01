@@ -17,14 +17,18 @@ _RUN_URL_RE = re.compile(r"/actions/runs/(\d+)\s*$")
 POLL_STEPS: tuple[float, ...] = (5, 5, 10, 10, 20, 30, 30, 60)
 
 
-def dispatch(gh: Gh, workflow: Workflow, inputs: dict[str, str], *, ref: str) -> str:
+def dispatch(gh: Gh, workflow: Workflow, inputs: dict[str, str], *, repo: str, ref: str) -> str:
     """Dispatch and return the run id.
 
     gh prints the run URL, which is the only race-free way to learn the id: the
     run list is ordered by a one-second-resolution timestamp, so two dispatches in
     the same second are indistinguishable there.
+
+    ``repo`` is passed explicitly: without it gh dispatches to whatever repository
+    the working directory belongs to, which is not necessarily the one whose
+    workflow file was just read.
     """
-    args = ["workflow", "run", workflow.file, "--ref", ref]
+    args = ["workflow", "run", workflow.file, "-R", repo, "--ref", ref]
     for key, value in inputs.items():
         args += ["-f", f"{key}={value}"]
     out = gh.text(args).strip()
@@ -38,7 +42,11 @@ def dispatch(gh: Gh, workflow: Workflow, inputs: dict[str, str], *, ref: str) ->
 
 
 def wait(
-    gh: Gh, run_id: str, *, on_poll: Callable[[dict[str, Any]], None] | None = None
+    gh: Gh,
+    repo: str,
+    run_id: str,
+    *,
+    on_poll: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Poll until the run completes, tolerating transient failures.
 
@@ -47,10 +55,11 @@ def wait(
     fix a repository that does not exist.
     """
     attempt = 0
+    polls = 0
     while True:
         try:
             payload = gh.run_view(
-                run_id, "status,conclusion,jobs,databaseId,displayTitle,url,createdAt"
+                repo, run_id, "status,conclusion,jobs,databaseId,displayTitle,url,createdAt"
             )
         except GhError as exc:
             if exc.kind is not GhErrorKind.RETRYABLE:
@@ -65,33 +74,39 @@ def wait(
             on_poll(payload)
         if payload.get("status") == "completed":
             return payload
-        time.sleep(POLL_STEPS[min(1, len(POLL_STEPS) - 1)])
+        polls += 1
+        # Step down the cadence on completed polls, not on retries: a run that
+        # is still going after an hour costs far more polls at the first step
+        # than the backoff intends.
+        time.sleep(POLL_STEPS[min(polls, len(POLL_STEPS) - 1)])
 
 
-def cancel(gh: Gh, run_id: str) -> None:
-    gh.text(["run", "cancel", run_id])
+def cancel(gh: Gh, repo: str, run_id: str) -> None:
+    gh.run_cancel(repo, run_id)
 
 
-def artifacts_of(gh: Gh, run_id: str) -> list[Artifact]:
-    return [Artifact.from_api(raw) for raw in gh.artifacts(run_id)]
+def artifacts_of(gh: Gh, repo: str, run_id: str) -> list[Artifact]:
+    return [Artifact.from_api(raw) for raw in gh.artifacts(repo, run_id)]
 
 
 def find_sdk_artifact(artifacts: list[Artifact], target: str) -> Artifact | None:
-    """The SDK artifact for one target, ignoring test reports and other targets.
+    """The SDK artifact for one target, ignoring other targets.
 
     A matrix build uploads both linux and windows artifacts under the same
     version, so taking the first match would pick the one that cannot run on a
-    linux test VM.
+    linux test VM. The test workflow's reports are named after the files they
+    hold (``test-<suite>-...``), so they never carry this prefix in the first
+    place.
     """
     prefix = f"cangjie-{target}-"
     for art in artifacts:
-        if art.name.startswith(prefix) and not art.name.startswith("cangjie-test-reports-"):
+        if art.name.startswith(prefix):
             return art
     return None
 
 
-def download(gh: Gh, run_id: str, name: str, dest: str) -> None:
-    gh.text(["run", "download", run_id, "-n", name, "-D", dest])
+def download(gh: Gh, repo: str, run_id: str, name: str, dest: str) -> None:
+    gh.run_download(repo, run_id, name, dest)
 
 
 def sdk_archive_name(target: str, version: str) -> str:
@@ -104,7 +119,7 @@ def sdk_archive_name(target: str, version: str) -> str:
     return f"cangjie-sdk-{target}-{version}"
 
 
-def active_runs(gh: Gh, workflow_file: str, *, status_filter: str = "") -> list[dict[str, Any]]:
+def active_runs(gh: Gh, repo: str, workflow_file: str) -> list[dict[str, Any]]:
     """Runs of one workflow that are queued or running.
 
     This repository declares no `concurrency:`, so a second dispatch is not
@@ -122,14 +137,12 @@ def active_runs(gh: Gh, workflow_file: str, *, status_filter: str = "") -> list[
         "--json",
         "databaseId,status,conclusion,headBranch,createdAt",
     ]
-    runs: list[dict[str, Any]] = gh.json(args)
+    entries = gh.run_list(repo, args)
     active = [
-        r
-        for r in runs
-        if r.get("status") in {"queued", "in_progress", "requested", "waiting", "pending"}
+        entry
+        for entry in entries
+        if entry.get("status") in {"queued", "in_progress", "requested", "waiting", "pending"}
     ]
-    if status_filter:
-        active = [r for r in active if str(r.get("headBranch", "")) == status_filter]
     return active
 
 

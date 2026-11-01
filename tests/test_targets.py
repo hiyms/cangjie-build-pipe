@@ -12,7 +12,6 @@ def test_linux_target_specifics() -> None:
     assert t.spec.exe_suffix == ""
     assert t.spec.cross_compile is False
     assert t.spec.needs_mingw is False
-    assert t.compiler_output_dirs() == ["output"]
     assert t.primary_compiler_output() == "output"
     assert t.runtime_output_subdir("release") == "linux_release_x86_64"
     assert t.runtime_output_subdir("RelWithDebInfo") == "linux_relwithdebinfo_x86_64"
@@ -25,7 +24,6 @@ def test_windows_target_specifics() -> None:
     assert t.spec.exe_suffix == ".exe"
     assert t.spec.cross_compile is True
     assert t.spec.needs_mingw is True
-    assert t.compiler_output_dirs() == ["output", "output-x86_64-w64-mingw32"]
     assert t.primary_compiler_output() == "output-x86_64-w64-mingw32"
     assert t.runtime_output_subdir("release") == "windows_release_x86_64"
     assert t.stdx_target_subdir() == "windows_x86_64_cjnative"

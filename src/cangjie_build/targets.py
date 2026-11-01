@@ -28,27 +28,20 @@ class Target(ABC):
     spec: TargetSpec
 
     @abstractmethod
-    def compiler_output_dirs(self) -> list[str]:
-        """Names of output dirs under cangjie_compiler/ that hold final compiler bits."""
-
-    @abstractmethod
     def runtime_output_subdir(self, build_type: str) -> str:
         """Subdir under cangjie_runtime/runtime/output/common/ produced by build.py install."""
 
     @abstractmethod
-    def runtime_lib_subdir(self, build_type: str) -> str:
-        """Subdir under compiler/output/runtime/lib/ for this target's runtime libs.
+    def runtime_lib_subdir(self) -> str:
+        """Name of the directory holding this target's runtime libs.
 
-        Same shape as ``runtime_output_subdir`` but suffixed with ``_cjnative``.
-        """
-
-    @abstractmethod
-    def installed_runtime_lib_subdir(self) -> str:
-        """Subdir under ``<sdk>/runtime/lib/`` in the packaged SDK.
-
-        The build tree keeps one directory per build type; the packages step
-        folds the selected one into a single build-type-independent name, so
-        anything reading the packaged SDK must not append the build type.
+        Under ``compiler/output/runtime/lib/`` in the build tree and under
+        ``<sdk>/runtime/lib/`` in the packaged SDK; both use this name. The
+        build type selects the enclosing directory only
+        (``runtime_output_subdir`` supplies that one), because the CMake side
+        derives the lib directory from ``CMAKE_SYSTEM_NAME`` and the processor
+        alone: ``TARGET_TRIPLE_DIRECTORY_PREFIX`` in cangjie_compiler's top
+        CMakeLists and ``TARGET_ARCH`` in cangjie_runtime's config.cmake.
         """
 
     @abstractmethod
@@ -71,16 +64,10 @@ class _LinuxX64(Target):
         needs_mingw=False,
     )
 
-    def compiler_output_dirs(self) -> list[str]:
-        return ["output"]
-
     def runtime_output_subdir(self, build_type: str) -> str:
         return f"linux_{build_type.lower()}_x86_64"
 
-    def runtime_lib_subdir(self, build_type: str) -> str:
-        return f"linux_{build_type.lower()}_x86_64_cjnative"
-
-    def installed_runtime_lib_subdir(self) -> str:
+    def runtime_lib_subdir(self) -> str:
         return "linux_x86_64_cjnative"
 
     def stdx_target_subdir(self) -> str:
@@ -101,16 +88,10 @@ class _WindowsX64(Target):
         needs_mingw=True,
     )
 
-    def compiler_output_dirs(self) -> list[str]:
-        return ["output", "output-x86_64-w64-mingw32"]
-
     def runtime_output_subdir(self, build_type: str) -> str:
         return f"windows_{build_type.lower()}_x86_64"
 
-    def runtime_lib_subdir(self, build_type: str) -> str:
-        return f"windows_{build_type.lower()}_x86_64_cjnative"
-
-    def installed_runtime_lib_subdir(self) -> str:
+    def runtime_lib_subdir(self) -> str:
         return "windows_x86_64_cjnative"
 
     def stdx_target_subdir(self) -> str:
@@ -119,6 +100,11 @@ class _WindowsX64(Target):
     def primary_compiler_output(self) -> str:
         return "output-x86_64-w64-mingw32"
 
+
+# The cross-compile builds run their host-side compiler from a linux build
+# tree, whose runtime libs therefore live under this name regardless of the
+# selected target.
+HOST_RUNTIME_LIB_SUBDIR = "linux_x86_64_cjnative"
 
 _REGISTRY: dict[str, Target] = {
     _LinuxX64.spec.key: _LinuxX64(),

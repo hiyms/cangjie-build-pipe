@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 
 from cangjie_guide.errors import GuideError
@@ -60,6 +61,10 @@ def check_source(value: str) -> str:
     A value with a colon in the path is the shape that used to be accepted, and
     it reaches git as part of the URL: the clone then asks the forge for a
     repository named after the branch. Catching it here names the typo instead.
+
+    Every rejection here mirrors `.github/scripts/build-fetch-args.sh`, which
+    refuses the same shapes inside the workflow. A value this check accepted but
+    the script refused would be dispatched, provision a VM, and fail there.
     """
     url, separator, ref_part = value.partition("#")
     if not url:
@@ -69,6 +74,17 @@ def check_source(value: str) -> str:
     path = url.split("://", 1)[-1]
     if "/" in path and ":" in path[path.index("/") :]:
         raise GuideError(f"source {value!r} separates the ref with ':' in the path; write URL#ref")
+    # scp-style `git@host:owner/repo.git` carries its path after a colon. The
+    # workflow prefixes a scheme-less value with https://, which would put that
+    # colon in the host, so it refuses the shape; a port number is the one
+    # colon-shaped input that is legitimate.
+    if "://" not in url:
+        first_segment = url.split("/", 1)[0]
+        if ":" in first_segment and not re.search(r":\d+$", first_segment):
+            raise GuideError(
+                f"source {value!r} looks like scp syntax; write it as "
+                "ssh://git@host/path/to/repo.git"
+            )
     return value
 
 

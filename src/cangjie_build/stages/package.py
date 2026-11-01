@@ -25,8 +25,7 @@ def _suffix(cfg: BuildConfig) -> str:
 
 
 def _platform_lib_dir_name(cfg: BuildConfig) -> str:
-    base = "windows" if cfg.target.spec.cross_compile else "linux"
-    return f"{base}_x86_64_cjnative"
+    return cfg.target.runtime_lib_subdir()
 
 
 def _make_archive(cfg: BuildConfig, src_dir: Path, base_name: str) -> Path:

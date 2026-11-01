@@ -22,7 +22,8 @@ uv run cangjie-guide verbose
 ```
 
 它检查 `gh` 是否安装、是否登录、token 是否带 `repo` 与 `workflow`、对仓库是否有写权限、
-三个工作流文件是否存在于指定 ref、以及各工作流所需的 secret 是否齐全。
+三个工作流文件是否存在于指定 ref、以及各工作流所需的 secret 是否齐全。仓库取 `--repo`
+指定的那个，未指定时取当前 checkout 的远端，与其它命令一致。
 
 secret 列表需要仓库 admin 权限；拿不到时该项标为「无法验证」并说明原因，不算失败。
 有 `fail` 时退出码非零。
@@ -51,7 +52,8 @@ uv run cangjie-guide build --wait                 # 派发后跟到结束
 
 **同名产物**。`upload-artifact` 遇到同名产物会覆盖，所以一次重构建会顶掉上一次的归档，
 即使测试正引用着它。发现同名未过期产物时列出它的来源与过期时间：非交互环境下报错并提示
-加 `--force`，有 TUI 时弹出确认（默认选「不替换」）。
+加 `--force`，有 TUI 时弹出确认（默认选「不替换」）。两个构建工作流都受这条约束；
+`--hosted` 时矩阵会同时产出 `linux-x64` 与 `windows-x64`，两个名字都会检查。
 
 **在途运行**。仓库没有声明 `concurrency:`，重复派发不会排队，会再开一台 VM。
 两台 16 vCPU 争同一份 `lowPriorityCores` 配额，第二台还可能被静默升到 Regular，价格约五倍。
@@ -126,5 +128,7 @@ uv run ty check
 uv run pytest
 ```
 
-工作流输入的默认值与选项从 `.github/workflows/*.yml` 读取，不硬编码。工作流改了默认值，
-这里跟着走。
+工作流输入的**名字与选择项**从 `.github/workflows/*.yml` 读取：表单按 dispatch ref 拉取那份
+YAML，按它声明的顺序问每一个输入，选择型输入只接受它列出的选项，新增的输入也不需要改代码。
+各命令自己的默认值（target、tag、build_type、VM 规格与区域、disk 参数等）写在 `cli.py` 里，
+它们会覆盖 YAML 的 default；工作流改了 default 而命令行没跟上时，以命令行的值为准。

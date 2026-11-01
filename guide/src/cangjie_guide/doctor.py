@@ -45,7 +45,8 @@ def local_checks(gh: Gh) -> list[Check]:
     checks.append(_ok("gh installed", "found on PATH"))
     try:
         auth: dict[str, Any] = gh.auth_state()
-    except GhError as exc:
+    except (GhError, GuideError) as exc:
+        # Being logged out is the state this check reports on, not a crash.
         return [*checks, _fail("gh authenticated", str(exc))]
 
     state = str(auth.get("state", ""))

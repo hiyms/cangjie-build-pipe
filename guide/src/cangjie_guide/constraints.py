@@ -43,8 +43,20 @@ def check_test_selection(sel: SuiteSelection) -> None:
             "the workflow rejects a run that names both"
         )
 
-    if AUTO_SIZE_REJECTS_CONFORMANCE and sel.vm_size == "auto" and "conformance" in sel.suites:
-        raise GuideError("vm_size=auto cannot size a conformance run; pass an explicit --vm-size")
+    # ``test-cangjie-azure.yml`` only errors on this combination when it has to
+    # size the machine by counting whole suites; with explicit cases it counts
+    # those instead. Rejecting unconditionally would refuse a combination the
+    # workflow accepts.
+    if (
+        AUTO_SIZE_REJECTS_CONFORMANCE
+        and sel.vm_size == "auto"
+        and "conformance" in sel.suites
+        and not sel.cases
+    ):
+        raise GuideError(
+            "vm_size=auto cannot count the conformance suite; set vm_size explicitly "
+            "or name the cases with --case"
+        )
 
     # An empty selection makes both harnesses exit 0 without running anything.
     selectors = [bool(sel.cases), bool(sel.paths), bool(sel.test_list), bool(sel.changed_in)]

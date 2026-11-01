@@ -13,6 +13,7 @@ from cangjie_build.errors import BuildError
 from cangjie_build.logging_setup import get_logger
 from cangjie_build.runner import CommandPart
 from cangjie_build.runner import run as _run
+from cangjie_build.targets import HOST_RUNTIME_LIB_SUBDIR
 from cangjie_build.toolchain import mingw, static_libs
 
 _log = get_logger("cangjie_build.stages")
@@ -23,6 +24,19 @@ WINDOWS_TARGET = "windows-x86_64"
 
 def join_pathsep(*parts: str) -> str:
     return os.pathsep.join(p for p in parts if p)
+
+
+def runtime_lib_subdirs(cfg: BuildConfig) -> list[str]:
+    """Runtime lib directory names to put on LD_LIBRARY_PATH for ``cfg``.
+
+    A cross-compile tree keeps the host runtime that cjc itself links against
+    next to the target runtime it produces, so the host name is always a
+    candidate; it is only added when the directory actually exists.
+    """
+    subdirs = [cfg.target.runtime_lib_subdir()]
+    if cfg.target.spec.cross_compile:
+        subdirs.append(HOST_RUNTIME_LIB_SUBDIR)
+    return subdirs
 
 
 def base_env(cfg: BuildConfig) -> dict[str, str]:
@@ -65,11 +79,14 @@ def base_env(cfg: BuildConfig) -> dict[str, str]:
         env["CANGJIE_HOME"] = str(cangjie_home)
         extra_path_dirs.insert(0, str(cangjie_home / "tools" / "bin"))
         extra_path_dirs.insert(0, str(cangjie_home / "bin"))
-        runtime_lib = (
-            cangjie_home / "runtime" / "lib" / cfg.target.runtime_lib_subdir(cfg.build_type)
-        )
-        if runtime_lib.is_dir():
-            ld_paths.insert(0, str(runtime_lib))
+        # Both spellings can be present in a cross-compile tree: the host
+        # runtime that cjc itself links against, and the target runtime the
+        # cross build produces. Adding whichever exists keeps a native run and
+        # a cross run on the same code path.
+        for subdir in runtime_lib_subdirs(cfg):
+            runtime_lib = cangjie_home / "runtime" / "lib" / subdir
+            if runtime_lib.is_dir():
+                ld_paths.insert(0, str(runtime_lib))
         tools_lib = cangjie_home / "tools" / "lib"
         if tools_lib.is_dir():
             ld_paths.insert(0, str(tools_lib))
@@ -117,18 +134,28 @@ def apply_text_patch(
 ) -> None:
     """Idempotent text-substitution patch.
 
-    Each ``edits`` entry is ``(old, new)``; both must be unique within the
-    file. If ``marker`` is given and already present in the file the patch
-    is a no-op. Otherwise every ``old`` must be found, or :class:`BuildError`
-    is raised — silent no-ops would mask upstream renames.
+    Each ``edits`` entry is ``(old, new)`` and must occur exactly once in the
+    file: a needle that matches twice means the upstream shape is not the one
+    the edit was written against, and replacing only the first occurrence would
+    leave the rest pointing at the old value with no sign of it. If ``marker``
+    is given and already present in the file the patch is a no-op. Otherwise
+    every ``old`` must be found, or :class:`BuildError` is raised — silent no-ops
+    would mask upstream renames.
     """
     require_file(path, stage=stage)
     text = path.read_text()
     if marker is not None and marker in text:
         return
     for old, new in edits:
-        if old not in text:
+        count = text.count(old)
+        if count == 0:
             raise BuildError(stage, f"patch shape drift: {old!r} not found in {path}")
+        if count > 1:
+            raise BuildError(
+                stage,
+                f"patch shape drift: {old!r} occurs {count} times in {path}; "
+                "the edit was written for a single occurrence",
+            )
         text = text.replace(old, new, 1)
     path.write_text(text)
     _log.info("Patched %s", path)

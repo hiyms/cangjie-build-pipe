@@ -5,7 +5,7 @@ from pathlib import Path
 
 from cangjie_build.errors import BuildError
 from cangjie_build.logging_setup import get_logger
-from cangjie_build.runner import run
+from cangjie_build.runner import run, run_capture
 
 _log = get_logger("cangjie_build.git")
 
@@ -41,3 +41,46 @@ def shallow_clone(url: str, dest: Path, *, tag: str | None = None) -> None:
     cmd += [url, str(dest)]
     _log.info("Cloning %s%s into %s", url, f" @ {tag}" if tag else "", dest)
     run(cmd, stage="git.clone")
+
+
+def require_checkout(dest: Path, *, tag: str | None, stage: str) -> None:
+    """Reject a directory that is not a usable checkout of ``tag``.
+
+    A clone killed mid-fetch leaves the directory behind with a partial object
+    store, and a directory cloned from a different revision carries the wrong
+    sources. Either one makes downstream failures look like something else, so
+    the directory is refused with the remedy in the message instead of being
+    reused silently.
+    """
+    if not (dest / ".git").exists():
+        raise BuildError(stage, f"{dest} exists but is not a git checkout; remove it and re-run")
+    if not (dest / ".git" / "HEAD").exists():
+        raise BuildError(
+            stage,
+            f"{dest} looks like an interrupted clone (no .git/HEAD); remove it and re-run",
+        )
+    head_rc, _ = run_capture(
+        ["git", "rev-parse", "--verify", "--quiet", "HEAD"],
+        cwd=dest,
+        stage=stage,
+        check=False,
+    )
+    if head_rc != 0:
+        raise BuildError(
+            stage,
+            f"{dest} has no resolvable HEAD (interrupted clone?); remove it and re-run",
+        )
+    if not tag:
+        return
+    rc, _ = run_capture(
+        ["git", "rev-parse", "--verify", "--quiet", f"{tag}^{{commit}}"],
+        cwd=dest,
+        stage=stage,
+        check=False,
+    )
+    if rc != 0:
+        raise BuildError(
+            stage,
+            f"{dest} does not contain {tag}; it was cloned from another revision. "
+            f"Remove {dest} to re-clone, or drop the ref",
+        )

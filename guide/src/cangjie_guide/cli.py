@@ -29,6 +29,10 @@ CACHE_DIR = Path.home() / ".cache" / "cangjie-guide"
 
 DEFAULT_REF = "master"
 
+# The hosted workflow builds a matrix of these targets, so a dispatch replaces an
+# artifact under each of those names rather than under one --target value.
+HOSTED_TARGETS: tuple[str, ...] = ("linux-x64", "windows-x64")
+
 
 class Context:
     def __init__(self, *, repo: str | None, ref: str, tui: bool | None) -> None:
@@ -36,11 +40,6 @@ class Context:
         self.ref = ref
         self._repo = repo
         self._tui = tui
-
-    @property
-    def explicit_repo(self) -> str | None:
-        """The --repo value, or None when it should be inferred."""
-        return self._repo
 
     @property
     def repo(self) -> str:
@@ -180,6 +179,12 @@ def build(
 
     if not hosted:
         _guard_conflicts(obj, inputs, force=force)
+    else:
+        # The hosted workflow uploads one artifact per matrix target under the
+        # same naming scheme, so it replaces a same-named artifact exactly the
+        # same way. Both targets are checked because the matrix builds both.
+        for target in HOSTED_TARGETS:
+            _guard_conflicts(obj, inputs, force=force, target=target)
     _guard_active_runs(obj, workflow)
 
     if dry_run:
@@ -188,17 +193,21 @@ def build(
     _dispatch(obj, workflow, inputs, wait=wait)
 
 
-def _guard_conflicts(obj: Context, inputs: dict[str, str], *, force: bool) -> None:
+def _guard_conflicts(
+    obj: Context, inputs: dict[str, str], *, force: bool, target: str | None = None
+) -> None:
     """Refuse to overwrite an artifact another run may be using.
 
     upload-artifact replaces same-named artifacts, so a rebuild of one version
-    silently takes away the archive a test may be pointed at.
+    silently takes away the archive a test may be pointed at. ``target``
+    overrides the workflow's own target input, which the hosted matrix does not
+    have.
     """
     # Mirrors the workflow's print-version step: an unset version falls back to
     # the tag, and a tag that is not SemVer becomes the harness placeholder.
     version = inputs.get("version", "").strip() or normalise(inputs.get("tag", ""))
-    target = inputs.get("target", "linux-x64")
-    name = f"cangjie-{target}-{version}"
+    chosen = target or inputs.get("target", "linux-x64")
+    name = f"cangjie-{chosen}-{version}"
     existing = runs.conflicting_artifacts(obj.gh, obj.repo, name)
     if not existing or force:
         return
@@ -228,7 +237,7 @@ def _confirm_overwrite(name: str) -> bool:
 
 
 def _guard_active_runs(obj: Context, workflow: Workflow) -> None:
-    active = runs.active_runs(obj.gh, workflow.file)
+    active = runs.active_runs(obj.gh, obj.repo, workflow.file)
     if not active:
         return
     listing = ", ".join(f"{r['databaseId']}({r['status']})" for r in active)
@@ -254,7 +263,7 @@ def _print_dispatch(workflow: Workflow, inputs: dict[str, str], ref: str) -> Non
 
 
 def _dispatch(obj: Context, workflow: Workflow, inputs: dict[str, str], *, wait: bool) -> None:
-    run_id = runs.dispatch(obj.gh, workflow, inputs, ref=obj.ref)
+    run_id = runs.dispatch(obj.gh, workflow, inputs, repo=obj.repo, ref=obj.ref)
     console.print(
         f"dispatched {workflow.display_name}: https://github.com/{obj.repo}/actions/runs/{run_id}"
     )
@@ -263,7 +272,9 @@ def _dispatch(obj: Context, workflow: Workflow, inputs: dict[str, str], *, wait:
 
 
 def _watch(obj: Context, run_id: str) -> None:
-    payload = runs.wait(obj.gh, run_id, on_poll=lambda p: console.print(f"  {p.get('status')}"))
+    payload = runs.wait(
+        obj.gh, obj.repo, run_id, on_poll=lambda p: console.print(f"  {p.get('status')}")
+    )
     conclusion = payload.get("conclusion")
     console.print(f"run {run_id} finished: {conclusion}")
     if conclusion != "success":
@@ -405,7 +416,7 @@ def _resolve_sdk(obj: Context, sdk: str) -> tuple[str, str, str]:
                 raise GuideError("no unexpired linux SDK artifact found")
             art = choices[0]
         else:
-            found = runs.find_sdk_artifact(runs.artifacts_of(obj.gh, sdk), "linux-x64")
+            found = runs.find_sdk_artifact(runs.artifacts_of(obj.gh, obj.repo, sdk), "linux-x64")
             if found is None:
                 raise GuideError(f"run {sdk} has no unexpired linux-x64 SDK artifact")
             art = found
@@ -474,7 +485,7 @@ def status(
     if watch:
         _watch(obj, run_id)
         return
-    payload = obj.gh.run_view(run_id, "status,conclusion,jobs,displayTitle,url")
+    payload = obj.gh.run_view(obj.repo, run_id, "status,conclusion,jobs,displayTitle,url")
     console.print(
         f"{payload.get('displayTitle')} {payload.get('status')} {payload.get('conclusion')}"
     )
@@ -544,7 +555,7 @@ def artifacts(
 
         run_id = pick_run(_recent_runs(obj))
 
-    available = runs.artifacts_of(obj.gh, run_id)
+    available = runs.artifacts_of(obj.gh, obj.repo, run_id)
     rows = [
         [a.name, "expired" if a.expired else "ok", a.expires_at, str(a.size_in_bytes)]
         for a in available
@@ -554,7 +565,7 @@ def artifacts(
     if get:
         dest = CACHE_DIR / run_id
         dest.mkdir(parents=True, exist_ok=True)
-        runs.download(obj.gh, run_id, get, str(dest))
+        runs.download(obj.gh, obj.repo, run_id, get, str(dest))
         console.print(f"downloaded to {dest}")
 
 
@@ -576,7 +587,7 @@ def cancel(
         from cangjie_guide.tui import pick_run
 
         run_id = pick_run(_recent_runs(obj))
-    runs.cancel(obj.gh, run_id)
+    runs.cancel(obj.gh, obj.repo, run_id)
     console.print(f"cancel requested for {run_id}")
     console.print(
         "the VM is removed by the cleanup job, which can fail; leaked groups are "
@@ -610,8 +621,17 @@ def verbose(
 ) -> None:
     """Check local gh readiness and the target repository's configuration."""
     obj = _obj(ctx)
+    target_ref = ref or obj.ref
+    # The repository checks are the point of this command, so resolve the
+    # repository the same way every other command does instead of skipping them
+    # when --repo was not passed explicitly.
     try:
-        checks = doctor.run(obj.gh, repo=obj.explicit_repo, ref=ref or obj.ref)
+        repo = obj.repo
+    except GhError as exc:
+        console.print(f"[red]failed:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+    try:
+        checks = doctor.run(obj.gh, repo=repo, ref=target_ref)
     except GhError as exc:
         console.print(f"[red]failed:[/red] {exc}")
         raise typer.Exit(code=1) from exc

@@ -11,7 +11,7 @@ from typing import Literal, cast
 from cangjie_build import summary
 from cangjie_build.config import BuildConfig
 from cangjie_build.errors import BuildError
-from cangjie_build.git import shallow_clone
+from cangjie_build.git import require_checkout, shallow_clone
 from cangjie_build.logging_setup import get_logger, stage
 from cangjie_build.runner import run as run_cmd
 from cangjie_build.runner import run_capture
@@ -74,15 +74,17 @@ def patch_framework(framework: Path) -> None:
     )
 
 
-_SUITE_CONFIG: dict[str, tuple[str, str]] = {
-    "hlt": (
-        "configs/cjnative/linux_x64-linux_x64/basic.cfg",
-        "testlist",
-    ),
-    "llt": (
-        "configs/cjnative/cjnative_test.cfg",
-        "cjnative_testlist",
-    ),
+# Each suite names its own config file and its own test list; the two are not
+# interchangeable. The list name lives in SUITE_TEST_LIST so the default-list
+# helper and the run share one source.
+_SUITE_CONFIG: dict[str, str] = {
+    "hlt": "configs/cjnative/linux_x64-linux_x64/basic.cfg",
+    "llt": "configs/cjnative/cjnative_test.cfg",
+}
+
+SUITE_TEST_LIST: dict[str, str] = {
+    "hlt": "testlist",
+    "llt": "cjnative_testlist",
 }
 
 
@@ -102,45 +104,7 @@ def checkout_repo(url: str, dest: Path, *, tag: str | None, stage_name: str) -> 
     worse than stopping.
     """
     if dest.is_dir():
-        # `.git` alone is not proof of a usable checkout: a clone killed mid-fetch
-        # leaves one with a partial object store and no worktree, and reusing it
-        # only moves the failure into `git diff-tree` or empty discovery.
-        if not (dest / ".git").exists():
-            raise BuildError(
-                stage_name,
-                f"{dest} exists but is not a git checkout; remove it and re-run",
-            )
-        if not (dest / ".git" / "HEAD").exists():
-            raise BuildError(
-                stage_name,
-                f"{dest} looks like an interrupted clone (no .git/HEAD); remove it and re-run",
-            )
-        head_rc, _ = run_capture(
-            ["git", "rev-parse", "--verify", "--quiet", "HEAD"],
-            cwd=dest,
-            stage=stage_name,
-            check=False,
-        )
-        if head_rc != 0:
-            raise BuildError(
-                stage_name,
-                f"{dest} has no resolvable HEAD (interrupted clone?); remove it and re-run",
-            )
-        if tag:
-            rc, _ = run_capture(
-                ["git", "rev-parse", "--verify", "--quiet", f"{tag}^{{commit}}"],
-                cwd=dest,
-                stage=stage_name,
-                check=False,
-            )
-            if rc != 0:
-                # A warning would let the suites run a different revision than
-                # the caller asked for while reporting success.
-                raise BuildError(
-                    stage_name,
-                    f"{dest} does not contain {tag}; it was cloned from another "
-                    f"revision. Remove {dest} to re-clone, or drop --test-tag",
-                )
+        require_checkout(dest, tag=tag, stage=stage_name)
         _log.info("%s already at %s, reusing", stage_name, dest)
         return dest
     # shallow_clone understands a bare commit SHA as well as a branch, which
@@ -159,7 +123,7 @@ def sdk_env(cfg: BuildConfig) -> dict[str, str]:
     # Validated, not just computed: if the layout ever drifts, failing here beats
     # every case dying with a loader error.
     runtime_lib = require_dir(
-        cangjie_home / "runtime" / "lib" / cfg.target.installed_runtime_lib_subdir(),
+        cangjie_home / "runtime" / "lib" / cfg.target.runtime_lib_subdir(),
         stage="test.sdk",
     )
     # package._package_stdx stages the tree as software/<stdx_target_subdir>, so
@@ -192,10 +156,36 @@ def sdk_env(cfg: BuildConfig) -> dict[str, str]:
     return env
 
 
+def conformance_masks(cases: list[Path], repo: Path) -> list[str]:
+    """Turn ``Conformance/...`` case paths into harness ``--tests`` masks.
+
+    The conformance harness discovers cases by walking the testsuite root and
+    matching each file against the masks, so a path has to be expressed relative
+    to that root. A file keeps its whole name; a directory becomes a prefix mask
+    so every case below it is selected, which is the same decision the Maple
+    path leaves to its framework.
+    """
+    suite_root = require_dir(
+        repo / "Conformance" / "Compiler" / "testsuite", stage="test.conformance.suite"
+    )
+    root = suite_root.resolve()
+    masks: list[str] = []
+    for case in cases:
+        resolved = case.resolve()
+        if not resolved.is_relative_to(root):
+            raise BuildError(
+                "test.conformance",
+                f"{case} is not inside {suite_root}; --case paths for the conformance "
+                "suite are resolved against its testsuite root",
+            )
+        relative = resolved.relative_to(root).as_posix()
+        masks.append(relative if resolved.is_file() else relative.rstrip("/") + "*")
+    return masks
+
+
 def _run_conformance(
     cfg: BuildConfig,
     repo: Path,
-    framework: Path,
     work: Path,
     *,
     tests: list[str],
@@ -206,6 +196,11 @@ def _run_conformance(
     ``harness.py`` always exits 0 — a failing case only shows up in
     ``results.log.json``. The stage therefore reads that JSON back and raises on
     any FAILED, ERRORED or INCOMPLETE entry so the caller gets a non-zero status.
+
+    ``tests`` are path masks relative to the testsuite root, which is what
+    ``--case`` under ``Conformance/`` is translated into: the harness discovers
+    cases by walking the tree with those masks, so a single case is named as a
+    mask rather than pinned as a path.
     """
     harness_dir = require_dir(
         repo / "Conformance" / "Compiler" / "harness", stage="test.conformance.harness"
@@ -318,8 +313,7 @@ def run_mapple(
     against.
     """
     suite_dir = require_dir(repo / "testsuites" / suite.upper(), stage=f"test.{suite}.suite")
-    cfg_rel, list_rel = _SUITE_CONFIG[suite]
-    cfg_file = require_file(suite_dir / cfg_rel, stage=f"test.{suite}.cfg")
+    cfg_file = require_file(suite_dir / _SUITE_CONFIG[suite], stage=f"test.{suite}.cfg")
     main_py = require_file(framework / "main.py", stage=f"test.{suite}.framework")
     work = ensure_dir(work)
     # Remove the previous run's report first. If this invocation fails before
@@ -379,7 +373,7 @@ def run_mapple(
         list_path = (
             _resolve_under(repo, test_list, stage=f"test.{suite}.list")
             if test_list is not None
-            else require_file(suite_dir / list_rel, stage=f"test.{suite}.list")
+            else require_file(suite_dir / SUITE_TEST_LIST[suite], stage=f"test.{suite}.list")
         )
         cmd += [
             f"--test_list={require_file(list_path, stage=f'test.{suite}.list')}",
@@ -433,26 +427,48 @@ def _git(*args: str, cwd: Path, stage: str, check: bool = True) -> tuple[int, st
     return run_capture(["git", *args], cwd=cwd, stage=stage, check=check)
 
 
+def _has_parent(repo: Path, rev: str) -> bool:
+    rc, _ = _git(
+        "rev-parse", "--verify", "--quiet", f"{rev}^", cwd=repo, stage="test.changed", check=False
+    )
+    return rc == 0
+
+
+def _deepen(repo: Path, rev: str | None, *, depth: int) -> tuple[bool, str]:
+    """Deepen history by ``depth`` commits, optionally along one revision.
+
+    Naming the revision matters when the commit is already local but sits at the
+    shallow boundary: a checkout made by fetching a bare SHA has no
+    ``refs/remotes/origin/*`` at all, and a plain ``git fetch --deepen`` then
+    walks the remote's branches, leaving the fetched commit exactly as shallow
+    as it started. Naming it fetches that commit's own ancestors.
+    """
+    cmd = ["fetch", f"--deepen={depth}", "origin"]
+    if rev is not None:
+        cmd.append(rev)
+    rc, out = _git(*cmd, cwd=repo, stage="test.changed", check=False)
+    return rc == 0, out
+
+
 def _ensure_rev_present(repo: Path, rev: str) -> None:
     """Make ``rev`` diffable in a possibly shallow checkout.
 
     The test repository is cloned with ``--depth 1``. In a shallow clone the
-    tip commit is a grafted boundary, so ``diff-tree`` reports no paths for it,
+    tip commit is a grafted boundary, so ``diff-tree`` prints no paths for it,
     and any older revision is simply absent. Deepening until the revision has a
     parent makes both the tip and recent history diffable while keeping the
     clone small.
     """
     rc, _ = _git("cat-file", "-e", f"{rev}^{{commit}}", cwd=repo, stage="test.changed", check=False)
     if rc != 0:
-        # Not in the local history; ask the remote for more of it.
+        # Not in the local history at all, so the commit has to be fetched
+        # before anything can be said about its ancestors.
         _log.info("Rev %s is not in the shallow checkout; deepening", rev)
-        fetch_rc, fetch_out = _git(
-            "fetch", "--deepen=50", "origin", cwd=repo, stage="test.changed", check=False
-        )
-        if fetch_rc != 0:
+        ok, out = _deepen(repo, None, depth=50)
+        if not ok:
             raise BuildError(
                 "test.changed",
-                f"rev {rev} is unknown locally and deepening from origin failed: {fetch_out.strip()}",
+                f"rev {rev} is unknown locally and deepening from origin failed: {out.strip()}",
             )
         rc, _ = _git(
             "cat-file", "-e", f"{rev}^{{commit}}", cwd=repo, stage="test.changed", check=False
@@ -463,13 +479,19 @@ def _ensure_rev_present(repo: Path, rev: str) -> None:
                 f"rev {rev} does not resolve in {repo} even after deepening; "
                 "pass a shallow-clone-visible rev such as HEAD or a newer tag",
             )
-    depth_rc, _ = _git(
-        "rev-parse", "--verify", "--quiet", f"{rev}^", cwd=repo, stage="test.changed", check=False
-    )
-    if depth_rc != 0:
-        # A boundary commit has no parent, so diff-tree prints nothing. Deepen
-        # inside a conditional so a missing parent does not abort the script.
-        _git("fetch", "--deepen=2", "origin", cwd=repo, stage="test.changed")
+    if _has_parent(repo, rev):
+        return
+    # A boundary commit has no parent, so `diff-tree` prints nothing for it.
+    ok, out = _deepen(repo, rev, depth=2)
+    if not ok:
+        # The commit exists, so this depth was enough to reach it; there is
+        # nothing more to fetch. Whether it has a parent is decided next.
+        _log.info("Deepening %s further failed (%s); treating it as the root", rev, out.strip())
+    if not _has_parent(repo, rev):
+        # A root commit legitimately has no parent, and `diff-tree` then needs
+        # --root to report anything. Saying so beats the caller reporting the
+        # commit as having touched no cases.
+        _log.info("%s has no parent in the checkout; diff-tree will run with --root", rev)
 
 
 def cases_touched_by(cfg: BuildConfig, rev: str, suites: list[Suite]) -> list[Path]:
@@ -498,11 +520,16 @@ def cases_touched_by(cfg: BuildConfig, rev: str, suites: list[Suite]) -> list[Pa
     # added and modified cases show up. Releases on the upstream dev branch are
     # almost always merges, so refusing them would make --changed-in useless
     # against the branch the workflow actually clones.
+    #
+    # --root makes a parentless commit report its own tree instead of nothing,
+    # which is the shape a shallow clone's boundary adopts once deepening cannot
+    # reach a parent.
     _, stdout = _git(
         "diff-tree",
         "--no-commit-id",
         "--name-only",
         "--diff-filter=d",
+        "--root",
         "-r",
         "-m",
         rev,
@@ -558,35 +585,67 @@ def stage_sdk_from_archives(cfg: BuildConfig, archives: list[Path]) -> None:
     existing = cfg.software_dir / "cangjie"
     if existing.exists():
         shutil.rmtree(existing)
+    # STDX lands beside the SDK at software/<stdx_target_subdir>, so it has to be
+    # cleared too: a re-run with a newer STDX archive would otherwise keep the
+    # files the new one no longer ships, leaving two versions mixed on one path.
+    stdx_dir = cfg.software_dir / cfg.target.stdx_target_subdir()
+    if stdx_dir.exists():
+        shutil.rmtree(stdx_dir)
     for archive in archives:
         require_file(archive, stage="test.unpack")
         _log.info("Unpacking %s into %s", archive, cfg.software_dir)
         # Archives can come from a user-supplied URL, so refuse members that
         # would escape the target directory.
-        _safe_extract(archive, cfg.software_dir)
+        safe_extract(archive, cfg.software_dir)
     cangjie_home = require_dir(cfg.software_dir / "cangjie", stage="test.unpack")
     # A Windows SDK satisfies the directory check above, and the mismatch would
     # then only show up as loader failures in every case. Require the
     # target-specific pieces up front.
     require_file(cangjie_home / "bin" / f"cjc{cfg.target.spec.exe_suffix}", stage="test.unpack")
     require_dir(
-        cangjie_home / "runtime" / "lib" / cfg.target.installed_runtime_lib_subdir(),
+        cangjie_home / "runtime" / "lib" / cfg.target.runtime_lib_subdir(),
         stage="test.unpack",
     )
 
 
-def _safe_extract(archive: Path, dest: Path) -> None:
+def safe_extract(archive: Path, dest: Path) -> None:
     """Extract ``archive`` into ``dest``, rejecting members that would escape it.
 
-    ``filter="data"`` is the stdlib's own member validation (absolute paths,
-    ``..`` components, links pointing outside). It runs inside the same open as
-    the extraction, so there is no window in which the archive could be swapped
-    for an unvalidated one. Available since 3.11.4, and this project pins
-    ``>=3.11,<3.13``.
+    tar goes through ``filter="data"``, the stdlib's own member validation
+    (absolute paths, ``..`` components, links pointing outside). It runs inside
+    the same open as the extraction, so there is no window in which the archive
+    could be swapped for an unvalidated one.
+
+    zip has no equivalent: ``shutil._unpack_zipfile`` takes no ``filter``
+    argument at any Python version, so passing one there raises TypeError
+    instead of validating. Members are therefore resolved against the
+    destination and rejected when they land outside it; ``ZipFile.extract``
+    already strips absolute paths and ``..`` components, this check covers the
+    rest.
     """
+    if zipfile.is_zipfile(archive):
+        _safe_extract_zip(archive, dest)
+        return
     try:
         shutil.unpack_archive(str(archive), str(dest), filter="data")
-    except (tarfile.TarError, zipfile.BadZipFile) as exc:
+    except (tarfile.TarError, shutil.ReadError) as exc:
+        raise BuildError("test.unpack", f"{archive} is not a readable archive: {exc}") from exc
+
+
+def _safe_extract_zip(archive: Path, dest: Path) -> None:
+    dest.mkdir(parents=True, exist_ok=True)
+    root = dest.resolve()
+    try:
+        with zipfile.ZipFile(archive) as zf:
+            for member in zf.infolist():
+                target = (root / member.filename).resolve()
+                if not target.is_relative_to(root):
+                    raise BuildError(
+                        "test.unpack",
+                        f"{archive} contains a member outside the destination: {member.filename}",
+                    )
+            zf.extractall(root)
+    except zipfile.BadZipFile as exc:
         raise BuildError("test.unpack", f"{archive} is not a readable archive: {exc}") from exc
 
 
@@ -655,9 +714,12 @@ def run(
     """Run cangjie_test suites against the SDK already staged in ``software/``.
 
     ``suites`` is the default set. Explicit ``cases`` override it: each case
-    path already names its suite, so one invocation can mix HLT and LLT cases.
+    path already names its suite, so one invocation can mix the three suites.
     Each suite still runs as its own framework invocation, because they use
     different config files, work directories and result files.
+
+    A ``--case`` path under ``Conformance/`` is translated into harness path
+    masks, since that framework selects cases by mask rather than by path.
 
     Only meaningful for targets that can execute on this host; a cross-compiled
     Windows SDK cannot be exercised from the Linux builder.
@@ -667,7 +729,7 @@ def run(
             "test",
             f"target {cfg.target.spec.key} cannot run its own binaries on this host",
         )
-    tests = tests or []
+    conformance_tests: list[str] = tests or []
     cases = list(cases or [])
     with stage("test"):
         checkout_root = cfg.workspace / "cangjie_test_checkouts"
@@ -697,49 +759,55 @@ def run(
         # Explicit paths decide which suites run. With none, the caller's list is
         # the plan: that is the whole-suite mode.
         plan: dict[Suite, list[Path]] = {}
+        conformance_cases: list[Path] = []
         if cases:
             if tests:
                 raise BuildError("test", "--tests and --case cannot be combined")
             plan = group_cases(cases, repo)
+            # A --case path under Conformance/ carries no suite-level meaning to
+            # the harness, which discovers cases from path masks. Turn the
+            # requested paths into masks over the testsuite root instead of
+            # dropping them and running the whole suite.
+            conformance_cases = plan.pop("conformance", [])
+            if conformance_cases:
+                conformance_tests = conformance_masks(conformance_cases, repo)
         else:
             for suite in suites:
                 plan[suite] = []
 
         reports: list[summary.SuiteReport] = []
-        for suite in plan:
-            if suite == "conformance":
-                results = _run_conformance(
-                    cfg,
-                    repo,
-                    framework,
-                    work_root / "conformance",
-                    tests=tests,
-                    base_timeout=base_timeout,
+        if conformance_cases or "conformance" in plan:
+            results = _run_conformance(
+                cfg,
+                repo,
+                work_root / "conformance",
+                tests=conformance_tests,
+                base_timeout=base_timeout,
+            )
+            totals = read_conformance_totals(results)
+            report = summary.SuiteReport("conformance", totals)
+            reports.append(report)
+            _log.info("conformance results: %s", totals)
+            if not report.executed:
+                # A --tests mask that matches nothing would otherwise read
+                # as a clean run; no case reaching a verdict means no
+                # evidence. A selection made only of cases the harness
+                # skipped lands here too.
+                summary.write(reports)
+                raise BuildError(
+                    "test.conformance",
+                    f"no case executed (tests={conformance_tests or 'suite default'}; "
+                    f"tallies: {totals}; see {results})",
                 )
-                totals = read_conformance_totals(results)
-                reports.append(summary.SuiteReport("conformance", totals))
-                _log.info("conformance results: %s", totals)
-                if not totals:
-                    # A --tests mask that matches nothing would otherwise read
-                    # as a clean run; no case executed means no evidence.
-                    summary.write(reports)
-                    raise BuildError(
-                        "test.conformance",
-                        f"no cases ran (tests={tests or 'suite default'}; see {results})",
-                    )
-                bad = {
-                    k: v
-                    for k, v in totals.items()
-                    if k in {"FAILED", "ERRORED", "INCOMPLETE"} and v
-                }
-                if bad:
-                    summary.write(reports)
-                    raise BuildError(
-                        "test.conformance",
-                        f"failing cases: {bad} (see {results})",
-                    )
-                continue
+            if report.failed:
+                summary.write(reports)
+                raise BuildError(
+                    "test.conformance",
+                    f"{report.failed} case(s) did not pass: {totals} (see {results})",
+                )
 
+        for suite in plan:
+            maple_suite = cast("Literal['hlt', 'llt']", suite)
             suite_cases = plan.get(suite, [])
             if tests:
                 raise BuildError(
@@ -773,7 +841,7 @@ def run(
                     repo,
                     framework,
                     work_root / suite,
-                    suite=suite,
+                    suite=maple_suite,
                     test_list=test_list,
                     cases=suite_cases,
                     jobs=jobs,
@@ -786,14 +854,14 @@ def run(
                 summary.write(reports)
                 raise
             totals = read_mapple_totals(results)
-            reports.append(summary.SuiteReport(suite, totals))
+            report = summary.SuiteReport(suite, totals)
+            reports.append(report)
             _log.info("%s results: %s (details in %s)", suite.upper(), totals, results)
             # Maple's `total` counts UNRESOLVED and NOT_RUN too, and --fail_exit
             # ignores both, so a selection made only of helper files (no EXEC
             # header) exits 0 having executed nothing. Require at least one case
             # that actually ran.
-            executed = totals.get("PASS", 0) + totals.get("FAIL", 0)
-            if not executed:
+            if not report.executed:
                 selected = (
                     ", ".join(str(c) for c in suite_cases)
                     if suite_cases
@@ -810,14 +878,10 @@ def run(
 
 def default_test_list(repo: Path, suite: Literal["hlt", "llt"]) -> Path:
     """Path of the suite's own test list (the cases CI is expected to run)."""
-    name = "testlist" if suite == "hlt" else "cjnative_testlist"
-    return require_file(repo / "testsuites" / suite.upper() / name, stage=f"test.{suite}.list")
-
-
-def clear_work(work: Path) -> None:
-    """Drop a previous run's work directory (harness needs an empty bin/)."""
-    if work.exists():
-        shutil.rmtree(work)
+    return require_file(
+        repo / "testsuites" / suite.upper() / SUITE_TEST_LIST[suite],
+        stage=f"test.{suite}.list",
+    )
 
 
 # VM sizing ladder for the test machine. Cases are independent processes, so

@@ -50,10 +50,21 @@ def test_rejects_changed_in_with_explicit_cases() -> None:
         check_test_selection(_sel(changed_in="HEAD"))
 
 
-def test_rejects_auto_size_for_conformance() -> None:
-    """The workflow's sizing step cannot count a conformance run."""
-    with pytest.raises(GuideError, match="cannot size a conformance run"):
+def test_rejects_auto_size_for_a_whole_conformance_suite() -> None:
+    """The workflow's sizing step cannot count a conformance suite."""
+    with pytest.raises(GuideError, match="cannot count the conformance suite"):
         check_test_selection(_sel(suites=("conformance",), cases=(), paths=("api/",)))
+
+
+def test_accepts_auto_size_for_conformance_with_explicit_cases() -> None:
+    """With cases named, the sizing step counts those instead of suites."""
+    check_test_selection(
+        _sel(
+            suites=("conformance",),
+            cases=("Conformance/Compiler/testsuite/src/api/test_01.cj",),
+            paths=(),
+        )
+    )
 
 
 def test_rejects_an_empty_selection() -> None:
@@ -85,7 +96,12 @@ def test_sdk_artifact_selection_filters_by_target() -> None:
 
 
 def test_sdk_artifact_selection_ignores_test_reports() -> None:
-    arts = [_art("cangjie-test-reports-9"), _art("cangjie-linux-x64-0.0.0-dev", "3")]
+    """The test workflow names its artifacts after the files, so they carry no SDK prefix."""
+    arts = [
+        _art("test-llt-linux-x64-41220193739.log"),
+        _art("test-verbose-linux-x64-41220193739.tar.gz"),
+        _art("cangjie-linux-x64-0.0.0-dev", "3"),
+    ]
     found = find_sdk_artifact(arts, "linux-x64")
     assert found is not None and found.run_id == "3"
 

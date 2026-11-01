@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import io
 import json
 import os
 import shutil
 import subprocess
+import tarfile
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -11,16 +14,20 @@ import pytest
 
 from cangjie_build.config import build_config
 from cangjie_build.errors import BuildError
+from cangjie_build.stages._common import apply_text_patch
 from cangjie_build.stages.test import (
     cases_touched_by,
+    conformance_masks,
     count_cases,
     default_test_list,
     group_cases,
     read_conformance_totals,
     read_mapple_totals,
     run_mapple,
+    safe_extract,
     sdk_env,
     size_for_case_count,
+    stage_sdk_from_archives,
     suite_of,
 )
 
@@ -178,16 +185,79 @@ def test_cases_touched_by_resolves_merge_commit(tmp_path: Path) -> None:
     assert cases_touched_by(_cfg_for(tmp_path), "HEAD", ["llt"]) == [side_case.parent]
 
 
-def test_cases_touched_by_reports_unknown_rev(tmp_path: Path) -> None:
+def _add_origin(repo: Path, remote: Path) -> None:
+    subprocess.run(["git", "-C", str(repo), "remote", "add", "origin", str(remote)], check=True)
+
+
+def test_cases_touched_by_reports_a_rev_the_remote_does_not_have(tmp_path: Path) -> None:
+    """A bogus rev against a reachable remote names the rev, not the fetch."""
     repo = tmp_path / "workspace" / "cangjie_test_checkouts" / "cangjie_test"
     repo.mkdir(parents=True)
     _git_repo(repo)
     (repo / "README.md").write_text("base\n", encoding="utf-8")
     _commit_all(repo, "base")
+    _add_origin(repo, repo)
     bogus = "0" * 40
 
-    with pytest.raises(BuildError, match=r"unknown locally and deepening from origin failed"):
+    with pytest.raises(BuildError, match=r"does not resolve in .* even after deepening"):
         cases_touched_by(_cfg_for(tmp_path), bogus, ["llt"])
+
+
+def test_cases_touched_by_reports_an_unreachable_remote(tmp_path: Path) -> None:
+    repo = tmp_path / "workspace" / "cangjie_test_checkouts" / "cangjie_test"
+    repo.mkdir(parents=True)
+    _git_repo(repo)
+    (repo / "README.md").write_text("base\n", encoding="utf-8")
+    _commit_all(repo, "base")
+
+    with pytest.raises(BuildError, match=r"deepening from origin failed"):
+        cases_touched_by(_cfg_for(tmp_path), "0" * 40, ["llt"])
+
+
+def test_cases_touched_by_reads_a_parentless_commit_with_root(tmp_path: Path) -> None:
+    """A commit with no parent reports its own tree, not "changed nothing"."""
+    repo = tmp_path / "workspace" / "cangjie_test_checkouts" / "cangjie_test"
+    case = repo / "testsuites" / "LLT" / "only.cj"
+    case.parent.mkdir(parents=True)
+    _git_repo(repo)
+    case.write_text("// EXEC: %compiler %f -o %output\n", encoding="utf-8")
+    _commit_all(repo, "the only commit")
+
+    assert cases_touched_by(_cfg_for(tmp_path), "HEAD", ["llt"]) == [case.parent]
+
+
+def test_cases_touched_by_follows_a_commit_fetched_by_sha(tmp_path: Path) -> None:
+    """A PR head fetched by SHA has no remote-tracking refs to deepen through."""
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    _git_repo(origin)
+    for index in range(4):
+        (origin / f"file{index}.txt").write_text("x\n", encoding="utf-8")
+        _commit_all(origin, f"base {index}")
+    subprocess.run(["git", "-C", str(origin), "checkout", "-qb", "pull-request"], check=True)
+    pr_case = origin / "testsuites" / "LLT" / "pr.cj"
+    pr_case.parent.mkdir(parents=True)
+    pr_case.write_text("// EXEC: %compiler %f -o %output\n", encoding="utf-8")
+    _commit_all(origin, "pr")
+    pr_sha = subprocess.run(
+        ["git", "-C", str(origin), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    # The branch goes away, so nothing but the bare SHA names the commit any more.
+    subprocess.run(["git", "-C", str(origin), "checkout", "-q", "master"], check=True)
+    subprocess.run(["git", "-C", str(origin), "branch", "-qD", "pull-request"], check=True)
+
+    repo = tmp_path / "workspace" / "cangjie_test_checkouts" / "cangjie_test"
+    repo.mkdir(parents=True)
+    subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+    _add_origin(repo, origin)
+    subprocess.run(["git", "-C", str(repo), "fetch", "--depth", "1", "origin", pr_sha], check=True)
+    subprocess.run(["git", "-C", str(repo), "checkout", "-q", "FETCH_HEAD"], check=True)
+
+    expected = repo / "testsuites" / "LLT"
+    assert cases_touched_by(_cfg_for(tmp_path), pr_sha, ["llt"]) == [expected]
 
 
 def test_cases_touched_by_requires_a_mapple_suite(tmp_path: Path) -> None:
@@ -211,15 +281,19 @@ def _fake_sdk(tmp_path: Path):
     return cfg
 
 
-def test_sdk_env_never_emits_empty_path_component(tmp_path: Path) -> None:
+def test_sdk_env_never_emits_empty_path_component(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """An empty PATH/LD_LIBRARY_PATH component means "current directory"."""
     cfg = _fake_sdk(tmp_path)
     for var in ("PATH", "LD_LIBRARY_PATH"):
-        os.environ.pop(var, None)
-    try:
-        env = sdk_env(cfg)
-    finally:
-        pass
+        # monkeypatch restores these when the test ends; deleting them from the
+        # process environment directly would leave every later test without a
+        # PATH for the rest of the session.
+        monkeypatch.delenv(var, raising=False)
+
+    env = sdk_env(cfg)
+
     for var in ("PATH", "LD_LIBRARY_PATH"):
         assert "" not in env[var].split(os.pathsep), f"{var}={env[var]!r}"
         assert not env[var].endswith(os.pathsep), f"{var}={env[var]!r}"
@@ -671,3 +745,153 @@ def test_framework_patch_makes_the_longest_placeholder_win(tmp_path: Path) -> No
     # Idempotent: a second call must not double-wrap the loop.
     test_stage.patch_framework(tmp_path)
     assert patched == task_py.read_text()
+
+
+def _zip(path: Path, members: dict[str, str]) -> Path:
+    with zipfile.ZipFile(path, "w") as zf:
+        for name, body in members.items():
+            zf.writestr(name, body)
+    return path
+
+
+def _tar(path: Path, members: dict[str, str]) -> Path:
+    with tarfile.open(path, "w:gz") as tf:
+        for name, body in members.items():
+            data = body.encode()
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            tf.addfile(info, io.BytesIO(data))
+    return path
+
+
+def test_safe_extract_unpacks_a_zip_sdk(tmp_path: Path) -> None:
+    """The windows SDK ships as a zip, so zip extraction has to work."""
+    archive = _zip(tmp_path / "sdk.zip", {"cangjie/bin/cjc": "x"})
+
+    safe_extract(archive, tmp_path / "out")
+
+    assert (tmp_path / "out" / "cangjie" / "bin" / "cjc").read_text() == "x"
+
+
+def test_safe_extract_rejects_a_zip_member_outside_the_destination(
+    tmp_path: Path,
+) -> None:
+    archive = _zip(tmp_path / "evil.zip", {"../escape.txt": "x"})
+
+    with pytest.raises(BuildError, match="outside the destination"):
+        safe_extract(archive, tmp_path / "out")
+
+    assert not (tmp_path / "escape.txt").exists()
+
+
+def test_safe_extract_unpacks_a_tar_gz_sdk(tmp_path: Path) -> None:
+    archive = _tar(tmp_path / "sdk.tar.gz", {"cangjie/bin/cjc": "x"})
+
+    safe_extract(archive, tmp_path / "out")
+
+    assert (tmp_path / "out" / "cangjie" / "bin" / "cjc").read_text() == "x"
+
+
+def test_safe_extract_rejects_a_tar_member_outside_the_destination(
+    tmp_path: Path,
+) -> None:
+    archive = _tar(tmp_path / "evil.tar.gz", {"../escape.txt": "x"})
+
+    with pytest.raises(BuildError):
+        safe_extract(archive, tmp_path / "out")
+
+    assert not (tmp_path / "escape.txt").exists()
+
+
+def test_safe_extract_reports_an_unknown_format_as_a_build_error(tmp_path: Path) -> None:
+    archive = tmp_path / "sdk.archive"
+    archive.write_bytes(b"not an archive")
+
+    with pytest.raises(BuildError, match="not a readable archive"):
+        safe_extract(archive, tmp_path / "out")
+
+
+def test_apply_text_patch_accepts_a_single_occurrence(tmp_path: Path) -> None:
+    target = tmp_path / "f.txt"
+    target.write_text("a\nneedle\nb\n")
+
+    apply_text_patch(target, [("needle", "replaced")], stage="t")
+
+    assert target.read_text() == "a\nreplaced\nb\n"
+
+
+def test_apply_text_patch_rejects_a_needle_that_matches_twice(tmp_path: Path) -> None:
+    """Replacing only the first of two occurrences leaves the second stale."""
+    target = tmp_path / "f.txt"
+    target.write_text("-L /opt/buildtools/lib\n-L /opt/buildtools/lib\n")
+
+    with pytest.raises(BuildError, match="occurs 2 times"):
+        apply_text_patch(target, [("-L /opt/buildtools/lib", "-L ${M}")], stage="t")
+
+    assert "/opt/buildtools" in target.read_text()
+
+
+def test_apply_text_patch_reports_a_vanished_needle(tmp_path: Path) -> None:
+    target = tmp_path / "f.txt"
+    target.write_text("something else\n")
+
+    with pytest.raises(BuildError, match="patch shape drift"):
+        apply_text_patch(target, [("needle", "x")], stage="t")
+
+
+def test_apply_text_patch_is_a_noop_once_the_marker_is_present(tmp_path: Path) -> None:
+    target = tmp_path / "f.txt"
+    target.write_text("needle\nMARKER\n")
+
+    apply_text_patch(target, [("needle", "x")], stage="t", marker="MARKER")
+
+    assert target.read_text() == "needle\nMARKER\n"
+
+
+def test_stage_sdk_from_archives_clears_the_previous_stdx(tmp_path: Path) -> None:
+    """A re-run with a newer STDX archive must not keep the old files."""
+    cfg = build_config(workspace=tmp_path / "ws", build_root=tmp_path / "bt")
+    home = cfg.software_dir / "cangjie"
+    (home / "bin").mkdir(parents=True)
+    (home / "bin" / "cjc").write_text("x")
+    (home / "runtime" / "lib" / "linux_x86_64_cjnative").mkdir(parents=True)
+
+    stale_stdx = cfg.software_dir / "linux_x86_64_cjnative"
+    stale_stdx.mkdir(parents=True)
+    (stale_stdx / "only-in-the-old-version.a").write_text("stale")
+
+    archive = _tar(
+        tmp_path / "sdk.tar.gz",
+        {
+            "cangjie/bin/cjc": "x",
+            "cangjie/runtime/lib/linux_x86_64_cjnative/libplaceholder.so": "x",
+        },
+    )
+
+    stage_sdk_from_archives(cfg, [archive])
+
+    assert not (stale_stdx / "only-in-the-old-version.a").exists()
+
+
+def test_conformance_case_paths_become_masks(tmp_path: Path) -> None:
+    """The conformance harness selects by mask, so --case has to be translated."""
+    cfg = _cfg_for(tmp_path)
+    repo = cfg.workspace / "cangjie_test_checkouts" / "cangjie_test"
+    suite = repo / "Conformance" / "Compiler" / "testsuite"
+    single = suite / "src" / "api" / "test_01.cj"
+    single.parent.mkdir(parents=True)
+    single.write_text("// test\n", encoding="utf-8")
+
+    assert conformance_masks([single], repo) == ["src/api/test_01.cj"]
+    assert conformance_masks([single.parent], repo) == ["src/api*"]
+
+
+def test_conformance_case_outside_the_testsuite_root_is_refused(tmp_path: Path) -> None:
+    cfg = _cfg_for(tmp_path)
+    repo = cfg.workspace / "cangjie_test_checkouts" / "cangjie_test"
+    (repo / "Conformance" / "Compiler" / "testsuite").mkdir(parents=True)
+    stray = tmp_path / "elsewhere.cj"
+    stray.write_text("// test\n", encoding="utf-8")
+
+    with pytest.raises(BuildError, match="not inside"):
+        conformance_masks([stray], repo)

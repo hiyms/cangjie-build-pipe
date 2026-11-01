@@ -94,6 +94,13 @@ def run_capture(
             _log.info(line.rstrip())
             if capture:
                 captured.append(line)
+    except BaseException:
+        # Ctrl-C or a logging failure: leaving the child running would let it
+        # keep writing into a pipe nobody reads, and a build step here runs for
+        # tens of minutes. Kill it and reap it before propagating.
+        proc.kill()
+        proc.wait()
+        raise
     finally:
         proc.stdout.close()
     rc = proc.wait()

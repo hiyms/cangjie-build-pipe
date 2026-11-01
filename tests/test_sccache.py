@@ -16,6 +16,18 @@ def isolate_env(monkeypatch: pytest.MonkeyPatch) -> Generator[None]:
         "SCCACHE_MULTILEVEL_CHAIN",
         "SCCACHE_GHA_ENABLED",
         "SCCACHE_DIR",
+        # describe_backends reads these too; a developer machine with an sccache
+        # backend exported would otherwise change what the default-backend test
+        # observes.
+        "SCCACHE_AZURE_CONNECTION_STRING",
+        "SCCACHE_AZURE_BLOB_CONTAINER",
+        "SCCACHE_BUCKET",
+        "SCCACHE_GCS_BUCKET",
+        "SCCACHE_REDIS",
+        "SCCACHE_REDIS_ENDPOINT",
+        "SCCACHE_MEMCACHED",
+        "SCCACHE_MEMCACHED_ENDPOINT",
+        "SCCACHE_WEBDAV_ENDPOINT",
     ):
         monkeypatch.delenv(var, raising=False)
     yield

@@ -3,12 +3,8 @@ from __future__ import annotations
 from cangjie_build.config import BuildConfig, RepoName
 from cangjie_build.logging_setup import stage
 from cangjie_build.runner import CommandPart
-from cangjie_build.runner import run as run_cmd
 from cangjie_build.stages._common import (
     copy_contents,
-    merged_env,
-    python_exe,
-    require_dir,
     run_build_py,
     windows_cross_args,
 )
@@ -112,20 +108,3 @@ def run(cfg: BuildConfig) -> None:
             build_args.extend(["--target-lib", str(target_lib)])
         run_build_py(cfg, repo_dir, build_args, stage_name="compiler.build.linux")
         run_build_py(cfg, repo_dir, ["install"], stage_name="compiler.install")
-
-
-def run_tests(cfg: BuildConfig) -> None:
-    """Run the compiler's own test suite (Linux native only)."""
-    if cfg.target.spec.cross_compile:
-        return
-    repo_dir = cfg.repo_path(RepoName.COMPILER)
-    envsetup = repo_dir / "output" / "envsetup.sh"
-    require_dir(repo_dir, stage="compiler.test")
-    if not envsetup.is_file():
-        raise FileNotFoundError(envsetup)
-    run_cmd(
-        ["bash", "-c", f"set -e; source '{envsetup}'; {python_exe()} build.py test"],
-        cwd=repo_dir,
-        env_overlay=merged_env(cfg),
-        stage="compiler.test",
-    )

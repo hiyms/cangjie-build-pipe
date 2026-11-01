@@ -69,9 +69,9 @@ def _build_args_for(name: str, cfg: BuildConfig) -> list[CommandPart]:
         return ["build", "-t", cfg.cross_build_type, "--target", "windows-x86_64"]
     args: list[CommandPart] = ["build", "-t", tool_build_type(cfg)]
     if name == "cjpm":
-        # The runtime was built with cfg.build_type, so its lib directory carries
-        # that name even though the tool itself is built as release/debug.
-        rpath = f"$ORIGIN/../../runtime/lib/{cfg.target.runtime_lib_subdir(cfg.build_type)}"
+        # The tool ships inside the SDK, so its rpath is resolved after
+        # packaging, where the runtime lib directory carries no build type.
+        rpath = f"$ORIGIN/../../runtime/lib/{cfg.target.runtime_lib_subdir()}"
         args += ["--set-rpath", rpath]
     return args
 

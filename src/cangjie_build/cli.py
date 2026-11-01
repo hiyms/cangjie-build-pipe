@@ -131,6 +131,19 @@ def _cfg(ctx: typer.Context) -> BuildConfig:
     return cfg
 
 
+def _explicit_version(ctx: typer.Context) -> str | None:
+    """The ``--cangjie-version`` value the caller typed, if any.
+
+    ``BuildConfig.cangjie_version`` is already normalised, so it is never empty
+    and cannot stand in for "not given". Rebuilding a config with it would also
+    lose the fallback from a later ``--tag``; this returns the raw option instead.
+    """
+    parent = ctx.parent
+    assert parent is not None, "sub-commands are always under the root command"
+    raw = parent.params.get("cangjie_version")
+    return raw if isinstance(raw, str) and raw else None
+
+
 # ---------------------------------------------------------------------------
 # Top-level commands
 # ---------------------------------------------------------------------------
@@ -157,19 +170,25 @@ def cmd_print_version(ctx: typer.Context) -> None:
 
 @app.command("toolchain-cache-key")
 def cmd_toolchain_cache_key(
+    ctx: typer.Context,
     target: Annotated[
-        TargetChoice,
-        typer.Option("--target", help="Which target's toolchain to key."),
-    ] = TargetChoice.windows_x64,
+        TargetChoice | None,
+        typer.Option("--target", help="Which target's toolchain to key (default: --target above)."),
+    ] = None,
 ) -> None:
     """Print the blob key for a built toolchain, derived from its pinned inputs.
 
     The key changes automatically when any pinned version or commit changes, so a
     rebuild never reuses a blob produced from different sources.
+
+    Without this option the command keys the target selected by the global
+    ``--target``, so ``cangjie-build --target linux-x64 toolchain-cache-key`` and
+    ``cangjie-build toolchain-cache-key --target linux-x64`` agree.
     """
     from cangjie_build.toolchain import toolchain_cache_key
 
-    typer.echo(toolchain_cache_key(str(target)))
+    chosen = str(target) if target is not None else _cfg(ctx).target.spec.key
+    typer.echo(toolchain_cache_key(chosen))
 
 
 @app.command("install-static-libs")
@@ -259,7 +278,10 @@ def cmd_fetch(
         build_root=base.build_root,
         target_key=base.target.spec.key,
         build_type=base.build_type,
-        cangjie_version=base.cangjie_version,
+        # Pass the raw option, not the normalised value: with an unset
+        # --cangjie-version the version has to follow --tag, and the normalised
+        # value is never empty so it would shadow that fallback.
+        cangjie_version=_explicit_version(ctx),
         stdx_version=base.stdx_version,
         global_tag=tag,
         repo_overrides=overrides,
@@ -441,7 +463,8 @@ def cmd_test(
             "--case",
             help=(
                 "A case file or directory (repeatable). The suite is inferred from the "
-                "path, so one run can mix testsuites/HLT and testsuites/LLT cases."
+                "path, so one run can mix testsuites/HLT, testsuites/LLT and "
+                "Conformance paths."
             ),
         ),
     ] = None,
@@ -484,7 +507,7 @@ def cmd_test(
             "--case and --changed-in decide the suites from their paths; "
             "do not also name conformance in --suite"
         )
-    if test_list and "conformance" in wanted and not suites:
+    if test_list and "conformance" in wanted:
         raise typer.BadParameter("--test-list selects HLT/LLT cases; use --tests for conformance")
     if selected and test_list:
         raise typer.BadParameter(
@@ -544,6 +567,33 @@ def cmd_run_all(
     tools.run(cfg)
     package.run(cfg)
     verify.run(cfg)
+
+
+@app.command("test-reports")
+def cmd_test_reports(
+    ctx: typer.Context,
+    label: Annotated[
+        str,
+        typer.Option("--label", help="Run identifier used in the artifact file names."),
+    ],
+    out: Annotated[
+        Path | None,
+        typer.Option(
+            "--out", help="Directory for the artifacts (default: workspace/test-artifacts)."
+        ),
+    ] = None,
+) -> None:
+    """Turn workspace/test-results into the logs and archive the workflow uploads."""
+    from cangjie_build import testlog
+
+    cfg = _cfg(ctx)
+    results = cfg.workspace / "test-results"
+    out_dir = out or cfg.workspace / "test-artifacts"
+    written = testlog.collect(results, out_dir, target=cfg.target.spec.key, label=label)
+    if not written:
+        raise BuildError("test.artifacts", f"no report under {results} to collect")
+    for path in written:
+        typer.echo(path)
 
 
 def entrypoint() -> None:  # pragma: no cover

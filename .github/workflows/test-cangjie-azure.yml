@@ -364,10 +364,9 @@ jobs:
           read -ra suites <<<"$SUITES"
           for s in "${suites[@]}"; do args+=("--suite" "$s"); done
           read -ra paths <<<"$TEST_PATHS"
-          if [[ ${#paths[@]} -gt 0 ]]; then
-            args+=(--tests)
-            args+=("${paths[@]}")
-          fi
+          # One --tests per mask. Typer's list option takes a repeated flag, not
+          # several values after one occurrence.
+          for p in "${paths[@]}"; do args+=("--tests" "$p"); done
           if [[ -n "$TEST_LIST" ]]; then args+=("--test-list" "$TEST_LIST"); fi
           cases=()
           if [[ -n "$TEST_CASES" ]]; then read -ra cases <<<"$TEST_CASES"; fi
@@ -414,50 +413,78 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           echo "::error::Selected test cases failed (exit $STATUS). See the run summary and the uploaded reports."
 
+      # The suite step records a per-case verdict in workspace/test-results, but a
+      # reader cannot see which case failed through the previous artifact: the json
+      # file is hundreds of MB and the failure detail is spread over one log per
+      # case. Render a readable log per suite and pack the raw reports into one
+      # archive instead.
       - name: Collect reports
         if: always()
-        # Copy the report files out of the per-suite work directories before
-        # uploading. The conformance run keeps its compiled .cjo/.a next to the
-        # report (measured ~2 MB for a single case), so uploading the tree
-        # wholesale would ship tens of GB of build output.
+        env:
+          LABEL: ${{ github.run_id }}
+          SUITES_OUTCOME: ${{ steps.run-suites.outcome }}
         run: |
           set -euo pipefail
-          src="$CANGJIE_WORKSPACE/test-results"
-          dst="$CANGJIE_WORKSPACE/test-reports"
-          mkdir -p "$dst"
-          if [[ ! -d "$src" ]]; then
-            # The suite step already failed if it never got this far; if it
-            # succeeded yet produced nothing, treat that as a failure rather than
-            # a green run with no evidence.
-            if [[ "${{ steps.run-suites.outcome }}" == "success" ]]; then
-              echo "::error::The suites reported success but wrote no results."
+          # Either the suites never wrote anything, or they wrote something this
+          # step cannot turn into a report. Both mean there is no evidence, and
+          # both are only a gap in the harness when the suites claimed success;
+          # on a failed run the failure itself is already visible and a second
+          # error here would hide it.
+          no_evidence() {
+            if [[ "$SUITES_OUTCOME" == "success" ]]; then
+              echo "::error::$1"
               exit 1
             fi
-            echo "No test-results directory; the suites did not start."
+            echo "$1"
             exit 0
+          }
+          if [[ ! -d "$CANGJIE_WORKSPACE/test-results" ]]; then
+            no_evidence "No test-results directory; the suites did not start."
           fi
-          shopt -s nullglob
-          for suite in "$src"/*/; do
-            name=$(basename "$suite")
-            for f in results.log results.log.json results.json; do
-              if [[ -f "$suite$f" ]]; then cp "$suite$f" "$dst/${name}-${f}"; fi
-            done
-            for f in "$suite"log/*; do
-              if [[ -f "$f" ]]; then
-                mkdir -p "$dst/${name}-log"
-                cp "$f" "$dst/${name}-log/"
-              fi
-            done
-          done
-          du -sh "$dst"
-          find "$dst" -type f | head -20
+          uv run cangjie-build test-reports --label "$LABEL" \
+            --out "$CANGJIE_WORKSPACE/test-artifacts" || \
+            no_evidence "Could not render any report from $CANGJIE_WORKSPACE/test-results."
+          ls -la "$CANGJIE_WORKSPACE/test-artifacts"
 
-      - name: Upload test reports
+      # One upload per file, unzipped: with archive:false the artifact takes the
+      # file's own name, so the log and the tarball arrive as themselves instead
+      # of as a zip around a single file.
+      - name: Upload the HLT log
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: cangjie-test-reports-${{ github.run_id }}
-          path: ${{ env.CANGJIE_WORKSPACE }}/test-reports/**
+          path: ${{ env.CANGJIE_WORKSPACE }}/test-artifacts/test-hlt-*.log
+          archive: false
+          overwrite: true
+          if-no-files-found: ignore
+
+      - name: Upload the LLT log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ env.CANGJIE_WORKSPACE }}/test-artifacts/test-llt-*.log
+          archive: false
+          overwrite: true
+          if-no-files-found: ignore
+
+      # The default suite is conformance, so leaving this out would mean a run that
+      # asked for nothing else uploads only the archive.
+      - name: Upload the conformance log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ env.CANGJIE_WORKSPACE }}/test-artifacts/test-conformance-*.log
+          archive: false
+          overwrite: true
+          if-no-files-found: ignore
+
+      - name: Upload the verbose archive
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ env.CANGJIE_WORKSPACE }}/test-artifacts/test-verbose-*.tar.gz
+          archive: false
+          overwrite: true
           if-no-files-found: warn
 
   cleanup:

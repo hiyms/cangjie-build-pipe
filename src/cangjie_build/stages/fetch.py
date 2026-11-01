@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cangjie_build.config import BuildConfig, RepoName
-from cangjie_build.git import shallow_clone
+from cangjie_build.git import require_checkout, shallow_clone
 from cangjie_build.logging_setup import get_logger, stage
 from cangjie_build.stages._common import apply_text_patch, ensure_dir
 
@@ -70,7 +70,12 @@ def run(cfg: BuildConfig) -> None:
         for repo in cfg.repos.values():
             target = cfg.workspace / repo.dir_name
             if target.exists():
-                _log.info("Repo %s already at %s, skipping clone", repo.name, target)
+                # An existing directory is reused only when it is a usable
+                # checkout of the requested ref: a re-run with a different tag
+                # would otherwise build the old revision and label the archive
+                # with the new version.
+                require_checkout(target, tag=repo.tag, stage=f"fetch.{repo.name}")
+                _log.info("Repo %s already at %s, reusing", repo.name, target)
                 continue
             shallow_clone(repo.url, target, tag=repo.tag)
         _apply_compiler_cjdb_patches(cfg.repo_path(RepoName.COMPILER))

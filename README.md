@@ -74,18 +74,21 @@ lld，cangjie 自带的 clang 在 cjc emit 时也用 lld。
 - `.github/workflows/build-cangjie.yml` — GitHub Actions 托管 runner 上
   的矩阵构建（`linux-x64` + `windows-x64`），多级 sccache（disk L0 +
   GHA L1）。`workflow_dispatch` 触发器参数与上游 `tozi-team/cangjie_build`
-  对齐：全局 `tag`、按仓库覆盖的 URL/tag、`build_type`、`run_tests`，另加
+  对齐：全局 `tag`、按仓库覆盖的 URL/tag、`build_type`，另加
   `version`（见下）。
-- `.github/workflows/build-cangjie-azure.yml` — Azure ephemeral VM 跑
-  `windows-x64` cross-compile（默认 `Standard_F16als_v7` 的 Spot 实例，区域
+- `.github/workflows/build-cangjie-azure.yml` — Azure ephemeral VM 上的构建，
+  `target` 输入在 `linux-x64`（默认）与 `windows-x64` 之间选；后者是
+  cross-compile（默认 `Standard_F16als_v7` 的 Spot 实例，区域
   fallback `eastus → eastus2 → centralus → westus3`）。GHA cache API 在重活下
   会 429 限流，改成把 sccache 写入 Azure Blob 容器
   （`SCCACHE_AZURE_BLOB_CONTAINER=sccache`）。
 
 两条工作流都有 `version` 输入：它决定写进 `-v` 与产物名字的版本号，`tag` 只决定源码 ref。
 留空则按 `tag` 推导（分支名归一化为 `0.0.0-dev`）。填了就必须是不带前导 `v` 的
-MAJOR.MINOR.PATCH，否则 `Resolve effective Cangjie version` 这一步会在 provision 之前失败——
+MAJOR.MINOR.PATCH，否则 `Resolve effective Cangjie version` 这一步会失败——
 harness 会默默剥掉 `v`、把其余不合法输入换成 `0.0.0-dev`，产物就会以另一个版本的名字发布。
+该步骤在 Azure 工作流的 build 作业里，也就是 VM 已经 provision 并开始计费之后；
+经 `cangjie-guide` 派发时，同一条规则在派发前于本机拦截，不产生机器费用。
 
 `.github/workflows/reap-orphans.yml` 是 Azure 的安全网：定时清理被取消或异常
 中断的 `cangjie-*` Azure resource group。项目只支持 Azure，GCP 相关的工作流和
@@ -209,10 +212,11 @@ README 里这种写法才能用。
   对 merge 什么都不输出，而上游 `dev` 分支的发布几乎都是 merge，不给 `-m` 等于让
   这个功能在真实分支上不可用。
 - 测试仓库是 `--depth 1` 浅克隆的。浅克隆里 `HEAD` 是嫁接边界，`diff-tree` 对它
-  不输出任何路径，更早的 rev 本地也不存在。所以解析 rev 之前会按需 `git fetch
-  --deepen`；`HEAD` 一定可用，越老的 rev 越可能需要联网补历史。
-- 不支持 `conformance`（那个套件是掩码语义，用 `--tests`），也不能与 `--case`
-  或 `--test-list` 同时用。
+  不输出任何路径，更早的 rev 本地也不存在。所以解析 rev 之前会按需对那个 rev 本身
+  `git fetch --deepen`；命名 rev 而不是只给 `origin`，是因为按 SHA 检出的 PR 头
+  没有任何远端跟踪引用可供加深。补不到父提交时（例如根提交）改用 `--root`，
+  让 `diff-tree` 报出这个提交自己的内容。
+- 不能与 `--case` 或 `--test-list` 同时用。
 
 三个套件用的是上游两套不同的框架，行为差别要清楚：
 
@@ -220,6 +224,8 @@ README 里这种写法才能用。
   它**总是退出 0**，失败只体现在工作目录的 `results.log.json` 里。CLI 因此回读
   那个 JSON，对 `FAILED` / `ERRORED` / `INCOMPLETE` 主动报错。`INCOMPLETE`
   指用例编译通过但没被执行完，上游自己的报告把它归到 SKIPPED 一类，这里按失败算。
+  这个套件按路径掩码选用例，所以 `--case` 指向 `Conformance/` 下的路径时会被
+  换算成掩码，而不是被丢掉。
 - `hlt` 和 `llt` 走 `cangjie_test_framework`（Maple）。它支持 `--fail_exit`，
   失败用例本身就会返回非零。两个套件的配置并不通用：HLT 用
   `configs/cjnative/linux_x64-linux_x64/basic.cfg` 加 `testlist`，LLT 用
@@ -228,8 +234,17 @@ README 里这种写法才能用。
   “零个用例”的运行什么都没验证，所以 CLI 把空结果判为失败。Maple 还有一层
   更隐蔽的：它的 `total` 把 `UNRESOLVED` 和 `NOT_RUN` 也算进去，而
   `--fail_exit` 对这两个不算失败。所以只挑到辅助文件（没有 `EXEC` 头）时，
-  Maple 会以 `total: N, UNRESOLVED: N` 返回 0。CLI 因此要求至少有
-  `PASS + FAIL > 0` 才算真的跑过。
+  Maple 会以 `total: N, UNRESOLVED: N` 返回 0。CLI 因此要求至少有一个用例
+  真的拿到结论（通过或失败）才算跑过，`UNRESOLVED`、`NOT_RUN` 和 conformance
+  的 `SKIPPED` 都不算。
+
+results 里的状态名按各自框架的实际写法统计：conformance 写
+`PASSED`/`FAILED`/`ERRORED`/`INCOMPLETE`/`SKIPPED`，Maple 写
+`total`/`PASS`/`FAIL`/`XFAIL`/`XPASS`/`UNRESOLVED`/`NOT_RUN`/`UNSUPPORTED`。
+run summary 页把两者归一化到同一张表，所以 conformance 的行不再恒为全零。
+表里 `failed` 只算真的跑过而没通过的用例（`FAIL`/`FAILED`/`ERRORED`/`INCOMPLETE`），
+从未开始的（`UNRESOLVED`/`NOT_RUN`/`UNSUPPORTED`/`SKIPPED`）计入单独的 `not run` 列；
+同一个 run 的 summary 页与 artifact 日志尾部因此报同一个失败数。
 
 一次调用可以混合套件，因为 `--case` 的路径自己说明归属：
 
@@ -292,7 +307,26 @@ B4ms 在价格 API 里根本没有 Spot 条目。
 `--suite` 可重复；不指定时只跑 `conformance`。测试仓库首次运行会浅克隆到
 `workspace/cangjie_test_checkouts/`（约 1 GB），后续复用。已存在的目录只有在确实
 是 git 检出时才复用，避免中断的克隆被当成有效仓库。结果落在
-`workspace/test-results/<suite>/`，CI 里会作为 artifact 上传。
+`workspace/test-results/<suite>/`。
+
+`test-reports` 把那个目录变成推送产物：
+
+```bash
+uv run cangjie-build test-reports --label "$GITHUB_RUN_ID" --out artifacts/
+```
+
+每个跑过的套件得到一个 `test-<suite>-<target>-<label>.log`：每个拿到结论的用例一行
+（`PASS <path>`），失败用例展开成完整的命令与输出（命令、返回码、stdout、stderr），
+尾部是总数、通过数、失败数、未运行数与失败用例清单。`UNRESOLVED`/`NOT_RUN`/
+`UNSUPPORTED`/`SKIPPED` 这类从未开始跑的条目（LLT 里有一万多个没有 `EXEC` 头的
+辅助文件）计入总数与 `not run`，既不逐条列出也不算入失败数，否则真正的失败会被埋没。
+
+另外得到一份 `test-verbose-<target>-<label>.tar.gz`，内容是 `<suite>-results.json`
+与 `<suite>-log/` 下的逐用例日志，也就是原先是 artifact 里那两样东西。用例工作目录
+里的 `.cjo`/`.a` 不计入：单个 conformance 用例就有约 2 MB。
+
+工作流把每个文件单独以 `archive: false` 上传，所以 artifact 名就是文件名，下载下来
+直接就是日志或 tarball。
 
 `--sdk-archive` 解包前会先清掉已有的 `software/cangjie`（否则两个版本的 SDK 会
 混在一起），并检查压缩包成员没有逃出目标目录，解包后还要求

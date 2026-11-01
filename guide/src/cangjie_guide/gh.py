@@ -106,9 +106,20 @@ class Gh:
         return str(self.json(["repo", "view", "--json", "nameWithOwner"])["nameWithOwner"])
 
     def auth_state(self) -> dict[str, Any]:
+        """The github.com account entry from ``gh auth status``.
+
+        ``gh`` exits 0 and prints ``{"hosts": {}}`` when nothing is logged in,
+        and it may list only a GitHub Enterprise host. Both are the state this
+        command exists to report, so they raise a GuideError naming the remedy
+        instead of a KeyError from indexing the payload.
+        """
         payload = self.json(["auth", "status", "--json", "hosts"])
-        hosts = payload["hosts"]["github.com"]
-        return dict(hosts[0])
+        hosts = _as_object(payload, "gh auth status").get("hosts")
+        accounts = _as_object(hosts, "gh auth status hosts").get("github.com")
+        if not isinstance(accounts, list) or not accounts:
+            raise GuideError("gh is not logged in to github.com; run `gh auth login`")
+        first = cast(list[Any], accounts)[0]
+        return _as_object(first, "gh auth status account")
 
     def repo_permissions(self, repo: str) -> dict[str, bool]:
         return dict(self.json(["api", f"repos/{repo}", "--jq", ".permissions"]))
@@ -135,15 +146,43 @@ class Gh:
         encoded = str(_as_object(payload, path).get("content", ""))
         return base64.b64decode(encoded).decode("utf-8")
 
-    def run_view(self, run_id: str, fields: str) -> dict[str, Any]:
-        return dict(self.json(["run", "view", run_id, "--json", fields]))
+    def run_view(self, repo: str, run_id: str, fields: str) -> dict[str, Any]:
+        return dict(self.json(["run", "view", run_id, "-R", repo, "--json", fields]))
 
-    def artifacts(self, run_id: str) -> list[dict[str, Any]]:
-        payload = self.json(
-            ["api", f"repos/{self.current_repo()}/actions/runs/{run_id}/artifacts?per_page=100"]
-        )
-        return [dict(a) for a in payload.get("artifacts", [])]
+    def run_list(self, repo: str, args: list[str]) -> list[dict[str, Any]]:
+        payload = self.json(["run", "list", "-R", repo, *args])
+        return [dict(entry) for entry in cast(list[Any], payload)]
+
+    def run_download(self, repo: str, run_id: str, name: str, dest: str) -> None:
+        self.text(["run", "download", run_id, "-R", repo, "-n", name, "-D", dest])
+
+    def run_cancel(self, repo: str, run_id: str) -> None:
+        self.text(["run", "cancel", run_id, "-R", repo])
+
+    def artifacts(self, repo: str, run_id: str) -> list[dict[str, Any]]:
+        path = f"repos/{repo}/actions/runs/{run_id}/artifacts?per_page=100"
+        return self.paged_artifacts(path)
 
     def repo_artifacts(self, repo: str) -> list[dict[str, Any]]:
-        payload = self.json(["api", f"repos/{repo}/actions/artifacts?per_page=100"])
-        return [dict(a) for a in payload.get("artifacts", [])]
+        return self.paged_artifacts(f"repos/{repo}/actions/artifacts?per_page=100")
+
+    def paged_artifacts(self, path: str) -> list[dict[str, Any]]:
+        """Every artifact across all pages of ``path``.
+
+        The artifact endpoints page at 100 entries and the repository accumulates
+        one test-report artifact per test run, so a single page stops being the
+        whole list long before the repository is old. A guard that reads only the
+        first page would miss the artifact it exists to protect.
+        """
+        pages = self.json(["api", "--paginate", "--slurp", path])
+        if not isinstance(pages, list):
+            raise GhError([self.executable, "api", path], 0, repr(pages), GhErrorKind.FATAL)
+        out: list[dict[str, Any]] = []
+        for page in cast(list[Any], pages):
+            settings = _as_object(page, path)
+            entries = settings.get("artifacts")
+            if isinstance(entries, list):
+                out.extend(
+                    _as_object(entry, f"{path} artifact") for entry in cast(list[Any], entries)
+                )
+        return out

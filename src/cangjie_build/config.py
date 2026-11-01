@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
@@ -163,9 +163,3 @@ def build_config(
         stdx_version=stdx_version,
         repos=make_repos(global_tag=global_tag, overrides=repo_overrides),
     )
-
-
-def with_build_type(cfg: BuildConfig, build_type: str) -> BuildConfig:
-    if build_type not in VALID_BUILD_TYPES:
-        raise ConfigError(f"invalid build_type {build_type!r}")
-    return replace(cfg, build_type=build_type)
