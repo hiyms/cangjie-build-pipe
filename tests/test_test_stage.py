@@ -306,6 +306,28 @@ def test_sdk_env_requires_the_runtime_lib_dir(tmp_path: Path) -> None:
         sdk_env(cfg)
 
 
+def test_sdk_env_points_stdx_at_the_dynamic_package_dir(tmp_path: Path) -> None:
+    """The suite configs pass CANGJIE_STDX_PATH to -L and --import-path at once.
+
+    The archive puts the .cjo files and the shared libraries in
+    <platform>/dynamic/stdx; the platform directory itself holds neither, so
+    naming it makes cjc report every stdx package as missing and the link step
+    report -lstdx.* as unfound.
+    """
+    cfg = _fake_sdk(tmp_path)
+    package_dir = cfg.software_dir / "linux_x86_64_cjnative" / "dynamic" / "stdx"
+    package_dir.mkdir(parents=True)
+
+    assert sdk_env(cfg)["CANGJIE_STDX_PATH"] == str(package_dir)
+
+
+def test_sdk_env_leaves_stdx_unset_when_no_archive_was_unpacked(tmp_path: Path) -> None:
+    """Testing the SDK on its own stays possible."""
+    cfg = _fake_sdk(tmp_path)
+
+    assert "CANGJIE_STDX_PATH" not in sdk_env(cfg)
+
+
 def test_run_mapple_anchors_relative_case_paths_on_thecheckout_repo(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

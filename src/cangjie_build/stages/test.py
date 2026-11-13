@@ -128,10 +128,15 @@ def sdk_env(cfg: BuildConfig) -> dict[str, str]:
     )
     # package._package_stdx stages the tree as software/<stdx_target_subdir>, so
     # the directory name already carries the platform; there is no extra
-    # cangjie_stdx prefix to join onto.
+    # cangjie_stdx prefix to join onto. CANGJIE_STDX_PATH names that directory's
+    # dynamic/stdx, which is where the archive puts the .cjo files together with
+    # the shared libraries: the suite configs pass the variable to -L,
+    # --import-path and --plugin alike, and derive ../../static/stdx and
+    # ../../dynamic/stdx from it. Pointing it at the platform directory instead
+    # leaves cjc with neither a package nor a library to find.
     # Only exported when the archive was unpacked. STDX is a separate artifact,
     # so requiring it here would break runs that deliberately test the SDK alone.
-    stdx_dir = cfg.software_dir / cfg.target.stdx_target_subdir()
+    stdx_dir = cfg.software_dir / cfg.target.stdx_target_subdir() / "dynamic" / "stdx"
 
     # join_pathsep drops empty parts. For LD_LIBRARY_PATH an empty component
     # means "the current directory", and the cases run with their work directory
