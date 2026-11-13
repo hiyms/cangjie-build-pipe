@@ -517,3 +517,55 @@ def test_source_override_refuses_the_colon_form() -> None:
     )
     assert proc.returncode != 0
     assert "URL#ref" in proc.stderr
+
+
+def test_source_override_may_name_only_a_ref() -> None:
+    """`#REF` keeps the default repository and overrides only its ref."""
+    tokens = _fetch_args(COMPILER_SOURCE="#feat/darwin-cross-compile-nightly-base")
+    assert tokens == ["--repo-tag", "compiler=feat/darwin-cross-compile-nightly-base"]
+
+
+def test_a_ref_only_override_accepts_a_hash_and_a_tag() -> None:
+    for ref in ("833f1a37ea7d", "833f1a37ea7d645cb54468ab0811978d2933e583", "v1.0.2"):
+        assert _fetch_args(STDX_SOURCE=f"#{ref}") == ["--repo-tag", f"stdx={ref}"], ref
+
+
+def test_a_ref_only_override_is_trimmed_like_a_url_override() -> None:
+    assert _fetch_args(TOOLS_SOURCE="  #feat/x  ") == ["--repo-tag", "tools=feat/x"]
+
+
+def test_a_bare_hash_is_refused() -> None:
+    """It names neither a repository nor a ref, so there is nothing to override."""
+    import os
+    import subprocess
+
+    env = {
+        **os.environ,
+        "COMPILER_SOURCE": "#",
+        "RUNTIME_SOURCE": "",
+        "TOOLS_SOURCE": "",
+        "STDX_SOURCE": "",
+    }
+    proc = subprocess.run(
+        [str(ROOT / ".github/scripts/build-fetch-args.sh")], capture_output=True, text=True, env=env
+    )
+    assert proc.returncode != 0
+    assert "no ref" in proc.stderr
+
+
+def test_a_ref_git_would_read_as_an_option_is_refused() -> None:
+    import os
+    import subprocess
+
+    env = {
+        **os.environ,
+        "COMPILER_SOURCE": "#--upload-pack=evil",
+        "RUNTIME_SOURCE": "",
+        "TOOLS_SOURCE": "",
+        "STDX_SOURCE": "",
+    }
+    proc = subprocess.run(
+        [str(ROOT / ".github/scripts/build-fetch-args.sh")], capture_output=True, text=True, env=env
+    )
+    assert proc.returncode != 0
+    assert "reads as an option" in proc.stderr

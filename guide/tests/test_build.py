@@ -76,11 +76,34 @@ def test_a_source_override_may_not_use_the_colon_form() -> None:
         check_source("https://example.invalid/cc.git:feature/x")
 
 
-def test_a_source_override_needs_a_url_and_a_ref() -> None:
-    with pytest.raises(GuideError, match="no clone URL"):
-        check_source("#feature/x")
+def test_a_source_override_needs_a_ref_after_the_separator() -> None:
     with pytest.raises(GuideError, match="no ref"):
         check_source("https://example.invalid/cc.git#")
+    with pytest.raises(GuideError, match="no ref"):
+        check_source("#")
+
+
+def test_a_ref_only_override_keeps_the_default_repository() -> None:
+    """`#REF` builds the default repository of that name from another ref."""
+    for value in ("#feature/x", "#833f1a37ea7d", "#v1.0.2"):
+        assert check_source(value) == value, value
+
+
+def test_a_ref_git_would_read_as_an_option_is_refused() -> None:
+    with pytest.raises(GuideError, match="reads as an option"):
+        check_source("#--upload-pack=evil")
+    with pytest.raises(GuideError, match="reads as an option"):
+        check_source("https://example.invalid/cc.git#--upload-pack=evil")
+
+
+def test_a_ref_with_whitespace_is_refused() -> None:
+    with pytest.raises(GuideError, match="whitespace"):
+        check_source("https://example.invalid/cc.git#feature x")
+
+
+def test_a_ref_only_override_reaches_the_dispatch() -> None:
+    inputs = _inputs(AZURE, compiler="#feature/x")
+    assert inputs["compiler_source"] == "#feature/x"
 
 
 def test_the_hosted_workflow_gets_no_vm_inputs() -> None:

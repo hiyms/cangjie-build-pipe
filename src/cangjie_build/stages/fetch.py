@@ -77,5 +77,5 @@ def run(cfg: BuildConfig) -> None:
                 require_checkout(target, tag=repo.tag, stage=f"fetch.{repo.name}")
                 _log.info("Repo %s already at %s, reusing", repo.name, target)
                 continue
-            shallow_clone(repo.url, target, tag=repo.tag)
+            shallow_clone(repo.url, target, tag=repo.tag, scratch_root=cfg.workspace)
         _apply_compiler_cjdb_patches(cfg.repo_path(RepoName.COMPILER))

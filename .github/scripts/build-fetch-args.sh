@@ -10,6 +10,7 @@
 #   https://atomgit.com/owner/repo.git#011f9c8             (commit)
 #   https://atomgit.com/owner/repo.git#feat/windows-cross  (branch; slashes allowed)
 #   atomgit.com/owner/repo.git#feat/windows-cross          (scheme-less; https:// prepended)
+#   #feat/windows-cross                                   (default URL, given ref)
 #   <empty>                                                (no override)
 #
 # `#` separates because a URL already carries colons: in the scheme, and in a
@@ -27,16 +28,45 @@
 #   uv run cangjie-build fetch "${fetch_args[@]}"
 set -euo pipefail
 
+trim_into() {
+	local __value="$2"
+	__value="${__value#"${__value%%[![:space:]]*}"}" # drop leading whitespace
+	__value="${__value%"${__value##*[![:space:]]}"}" # drop trailing whitespace
+	printf -v "$1" '%s' "$__value"
+}
+
 emit() {
-	local name="$1" raw="$2"
-	raw="${raw#"${raw%%[![:space:]]*}"}" # trim leading whitespace
-	raw="${raw%"${raw##*[![:space:]]}"}" # trim trailing whitespace
+	local name="$1" raw ref=""
+	trim_into raw "$2"
 	[[ -z "$raw" ]] && return 0
 
-	local url_part="$raw" branch=""
+	local url_part="$raw"
 	if [[ "$raw" == *"#"* ]]; then
-		url_part="${raw%%#*}"
-		branch="${raw#*#}"
+		local before_hash="${raw%%#*}"
+		local after_hash="${raw#*#}"
+		trim_into url_part "$before_hash"
+		trim_into ref "$after_hash"
+	fi
+
+	# An empty URL is how a caller asks for the default repository of that name
+	# with its own ref, e.g. `#feat/windows-cross`. A bare `#` names no ref and
+	# no URL, so there is nothing to override with.
+	if [[ "$raw" == *"#"* && -z "$ref" ]]; then
+		echo "$name: '$raw' ends with '#' and no ref; write '#ref' for the default repository, or URL#ref" >&2
+		exit 1
+	fi
+	if [[ "$ref" == *[[:space:]]* ]]; then
+		echo "$name: '$raw' has whitespace inside the ref" >&2
+		exit 1
+	fi
+	# A ref beginning with '-' reaches git as an option (`git fetch origin --upload-pack=...`).
+	if [[ "$ref" == -* ]]; then
+		echo "$name: '$raw' has a ref beginning with '-', which git reads as an option" >&2
+		exit 1
+	fi
+	if [[ -z "$url_part" ]]; then
+		printf -- '--repo-tag\n%s=%s\n' "$name" "$ref"
+		return 0
 	fi
 
 	# A colon in the path is the separator this script used to accept. Left alone
@@ -66,8 +96,8 @@ emit() {
 	esac
 
 	printf -- '--repo-url\n%s=%s\n' "$name" "$url_part"
-	if [[ -n "$branch" ]]; then
-		printf -- '--repo-tag\n%s=%s\n' "$name" "$branch"
+	if [[ -n "$ref" ]]; then
+		printf -- '--repo-tag\n%s=%s\n' "$name" "$ref"
 	fi
 }
 

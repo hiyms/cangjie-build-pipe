@@ -94,6 +94,28 @@ harness 会默默剥掉 `v`、把其余不合法输入换成 `0.0.0-dev`，产�
 中断的 `cangjie-*` Azure resource group。项目只支持 Azure，GCP 相关的工作流和
 脚本已移除。
 
+### 按仓库覆盖源码
+
+`compiler_source` / `runtime_source` / `tools_source` / `stdx_source` 每个输入接受三种写法：
+
+| 写法 | 含义 |
+| --- | --- |
+| `https://host/owner/repo.git` | 换仓库，ref 用全局 `tag` |
+| `https://host/owner/repo.git#REF` | 换仓库，并用 `REF` |
+| `#REF` | 仓库用默认的（`github.com/CangjieLanguage/cangjie_<name>.git`），只用 `REF` |
+
+`REF` 可以是分支名（含斜杠）、tag，或任意长度的 commit hash（7 位到 40 位）。
+分隔符用 `#` 是因为 URL 本身带冒号（scheme、端口），分支名又带斜杠，只有 `#` 能同时避开两者。
+
+commit hash 走单独的克隆路径。`git clone --branch <hash>` 会把 hash 当成远端引用名去查，
+服务器回 `Remote branch <hash> not found`，看起来像 hash 写错了，实际是克隆形式不对。
+完整 hash 直接 `git fetch --depth 1 origin <sha>` 检出；缩写 hash 先在远端解析成完整 hash。
+解析时会取一次全部 heads、tags 以及 pull / merge-request 头，加 `--filter=tree:0`，
+只下载提交图（几 MB），文件内容留在服务器上，检出时才取。
+
+复用已有目录时按 `HEAD` 指向的提交判断：目录在另一个提交上就报错并给出删除重克隆的提示，
+不会把旧版本构建出来再冠上新版本号。
+
 ### 缓存与凭据
 
 sccache 和交叉编译工具链都放在 Azure Blob 容器里，不用 GitHub Actions cache：

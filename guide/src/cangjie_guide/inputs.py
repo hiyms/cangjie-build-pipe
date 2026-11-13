@@ -56,21 +56,32 @@ def build_inputs(
 def check_source(value: str) -> str:
     """Reject a source override the workflow would misread.
 
-    The ref follows the URL after `#`, because a URL already carries colons (the
-    scheme, the port) and a branch name carries slashes (feat/windows-cross).
-    A value with a colon in the path is the shape that used to be accepted, and
-    it reaches git as part of the URL: the clone then asks the forge for a
-    repository named after the branch. Catching it here names the typo instead.
+    Three shapes are accepted: a clone URL on its own, ``URL#REF``, and ``#REF``
+    for the default repository of that name with its own ref. The ref follows the
+    URL after `#`, because a URL already carries colons (the scheme, the port)
+    and a branch name carries slashes (feat/windows-cross). A value with a colon
+    in the path is the shape that used to be accepted, and it reaches git as part
+    of the URL: the clone then asks the forge for a repository named after the
+    branch. Catching it here names the typo instead.
 
     Every rejection here mirrors `.github/scripts/build-fetch-args.sh`, which
     refuses the same shapes inside the workflow. A value this check accepted but
     the script refused would be dispatched, provision a VM, and fail there.
     """
     url, separator, ref_part = value.partition("#")
-    if not url:
-        raise GuideError(f"source {value!r} has no clone URL before the '#'")
-    if separator and not ref_part.strip():
+    url = url.strip()
+    ref = ref_part.strip()
+    if separator and not ref:
         raise GuideError(f"source {value!r} ends with '#' and no ref")
+    if separator and any(ch.isspace() for ch in ref_part):
+        raise GuideError(f"source {value!r} has whitespace inside the ref")
+    if ref.startswith("-"):
+        raise GuideError(
+            f"source {value!r} has a ref beginning with '-', which git reads as an option"
+        )
+    if not url:
+        # `#REF` keeps the repository default; only the ref is being overridden.
+        return f"#{ref}"
     path = url.split("://", 1)[-1]
     if "/" in path and ":" in path[path.index("/") :]:
         raise GuideError(f"source {value!r} separates the ref with ':' in the path; write URL#ref")

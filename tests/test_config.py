@@ -129,7 +129,7 @@ def test_shallow_clone_accepts_a_commit_sha(
     assert "clone --depth 1 --branch" not in flat
     assert "init --quiet" in flat
     assert f"fetch --depth 1 origin {sha}" in flat
-    assert "checkout --quiet FETCH_HEAD" in flat
+    assert "checkout --quiet --detach FETCH_HEAD" in flat
 
 
 def test_shallow_clone_still_uses_branch_for_a_branch_name(

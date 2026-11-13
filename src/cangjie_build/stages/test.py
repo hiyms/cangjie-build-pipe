@@ -88,7 +88,9 @@ SUITE_TEST_LIST: dict[str, str] = {
 }
 
 
-def checkout_repo(url: str, dest: Path, *, tag: str | None, stage_name: str) -> Path:
+def checkout_repo(
+    url: str, dest: Path, *, tag: str | None, stage_name: str, scratch_root: Path | None = None
+) -> Path:
     """Shallow-clone ``url`` into ``dest`` unless a real checkout is already there.
 
     The test repositories are only needed on the machine that runs the tests,
@@ -96,20 +98,20 @@ def checkout_repo(url: str, dest: Path, *, tag: str | None, stage_name: str) -> 
     therefore cloned here rather than in the fetch stage, and a pre-existing
     checkout is reused so a re-run does not re-download 1 GB of cases.
 
-    A directory is only reused when it is actually a git checkout: an
-    interrupted clone leaves the directory behind, and silently reusing it
-    produces confusing downstream failures (``not a git repository``, empty
-    discovery). A requested ``tag`` that the existing checkout does not have is
-    reported rather than ignored, since testing the wrong revision silently is
-    worse than stopping.
+    A directory is only reused when it is actually a git checkout at the
+    requested revision: an interrupted clone leaves the directory behind, and
+    silently reusing it produces confusing downstream failures (``not a git
+    repository``, empty discovery), while a checkout of another revision tests
+    the wrong cases. Both are reported rather than ignored.
     """
     if dest.is_dir():
         require_checkout(dest, tag=tag, stage=stage_name)
         _log.info("%s already at %s, reusing", stage_name, dest)
         return dest
-    # shallow_clone understands a bare commit SHA as well as a branch, which
-    # matters because a pull request's cases exist only as a commit.
-    shallow_clone(url, dest, tag=tag)
+    # shallow_clone understands a commit hash in any accepted length as well as
+    # a branch name, which matters because a pull request's cases exist only as
+    # a commit.
+    shallow_clone(url, dest, tag=tag, scratch_root=scratch_root or dest.parent)
     return require_dir(dest, stage=stage_name)
 
 

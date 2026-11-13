@@ -114,7 +114,8 @@ def build(
     tag: Annotated[str, typer.Option(help="Upstream ref to build.")] = "main",
     build_type: Annotated[str, typer.Option("--build-type", help="Build type.")] = "relwithdebinfo",
     compiler: Annotated[
-        str | None, typer.Option(help="Override compiler source as URL#REF.")
+        str | None,
+        typer.Option(help="Override compiler source as URL#REF, or #REF to keep the default URL."),
     ] = None,
     runtime: Annotated[str | None, typer.Option(help="Override runtime source as URL#REF.")] = None,
     tools: Annotated[str | None, typer.Option(help="Override tools source as URL#REF.")] = None,

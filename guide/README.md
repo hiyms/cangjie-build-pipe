@@ -48,6 +48,14 @@ uv run cangjie-guide build --wait                 # 派发后跟到结束
 本身已经带冒号（scheme、端口），分支名又带斜杠（`feat/linux-cross-windows`），只有 `#` 能同时避开两者。
 写成 `URL:REF` 会在派发前报错，否则那一整串会被当成 clone URL，git 会去找一个名为该分支的仓库。
 
+只写 `#REF` 表示保留该仓库的默认地址、只换 ref：
+
+```bash
+uv run cangjie-guide build --runtime '#833f1a37ea7d' --tools '#b093531867eb'
+```
+
+`REF` 可以是分支名、tag，或任意长度的 commit hash（7 位到 40 位）。
+
 派发前会做两项检查：
 
 **同名产物**。`upload-artifact` 遇到同名产物会覆盖，所以一次重构建会顶掉上一次的归档，

@@ -702,8 +702,11 @@ def test_test_checkout_routes_through_shallow_clone(
 
     seen: list[tuple[str, Path, str | None]] = []
 
-    def fake_clone(url: str, dest: Path, *, tag: str | None = None) -> None:
+    def fake_clone(
+        url: str, dest: Path, *, tag: str | None = None, scratch_root: Path | None = None
+    ) -> None:
         seen.append((url, dest, tag))
+        assert scratch_root is not None
         dest.mkdir(parents=True)
         (dest / "x.cj").write_text("main() {}\n")
 
@@ -724,8 +727,11 @@ def test_framework_tag_does_not_inherit_the_test_repository_commit(
 
     seen: dict[str, str | None] = {}
 
-    def fake_clone(url: str, dest: Path, *, tag: str | None = None) -> None:
+    def fake_clone(
+        url: str, dest: Path, *, tag: str | None = None, scratch_root: Path | None = None
+    ) -> None:
         seen[dest.name] = tag
+        assert scratch_root is not None
         dest.mkdir(parents=True)
         (dest / "x.cj").write_text("main() {}\n")
 
